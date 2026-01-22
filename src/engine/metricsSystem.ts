@@ -106,7 +106,8 @@ export function applyEnvironmentalEffects(
     bodyTemperature: 0,
     hydration: 0,
     morale: 0,
-    shelter: 0
+    shelter: 0,
+    injurySeverity: 0
   };
 
   const shelterMultiplier = 1 - (metrics.shelter / 100) * 0.85;
@@ -117,31 +118,31 @@ export function applyEnvironmentalEffects(
 
   if (scenario.weather === 'storm' || scenario.weather === 'snow') {
     changes.bodyTemperature = -0.2 * shelterMultiplier;
-    changes.energy = -2 * shelterMultiplier;
+    changes.energy = -1.4 * shelterMultiplier;
     changes.morale = -1.5 * (1 - (metrics.shelter / 100) * 0.5);
     if (metrics.shelter < 50) {
       changes.shelter = -2;
     }
   } else if (scenario.weather === 'rain') {
     changes.bodyTemperature = -0.15 * shelterMultiplier;
-    changes.energy = -1.5 * shelterMultiplier;
+    changes.energy = -1 * shelterMultiplier;
     if (metrics.shelter < 60) {
       changes.shelter = -1.5;
     }
   } else if (scenario.weather === 'heat') {
     changes.hydration = -3 * (1 - (metrics.shelter / 100) * 0.6);
-    changes.energy = -2 * (1 - (metrics.shelter / 100) * 0.4);
+    changes.energy = -1.4 * (1 - (metrics.shelter / 100) * 0.4);
   }
 
   if (tempDiff < -15) {
     changes.bodyTemperature = (changes.bodyTemperature || 0) - (0.3 * shelterMultiplier);
-    changes.energy = (changes.energy || 0) - (3 * shelterMultiplier);
+    changes.energy = (changes.energy || 0) - (2 * shelterMultiplier);
   } else if (tempDiff < -5) {
     changes.bodyTemperature = (changes.bodyTemperature || 0) - (0.15 * shelterMultiplier);
-    changes.energy = (changes.energy || 0) - (1.5 * shelterMultiplier);
+    changes.energy = (changes.energy || 0) - (1 * shelterMultiplier);
   } else if (tempDiff > 15) {
     changes.hydration = (changes.hydration || 0) - (2 * (1 - (metrics.shelter / 100) * 0.5));
-    changes.energy = (changes.energy || 0) - (2 * (1 - (metrics.shelter / 100) * 0.3));
+    changes.energy = (changes.energy || 0) - (1.4 * (1 - (metrics.shelter / 100) * 0.3));
   }
 
   if (scenario.timeOfDay === 'night') {
@@ -150,7 +151,7 @@ export function applyEnvironmentalEffects(
   }
 
   changes.hydration = (changes.hydration || 0) - 1.5;
-  changes.energy = (changes.energy || 0) - 0.5;
+  changes.energy = (changes.energy || 0) - 0.3;
 
   if (metrics.injurySeverity > 0) {
     changes.energy = (changes.energy || 0) - (metrics.injurySeverity * 0.03);
@@ -284,7 +285,7 @@ export function checkEndConditions(state: GameState): {
     };
   }
 
-  if (state.turnNumber >= 8 && successfulSignals >= 3 && m.signalEffectiveness > 60 && m.survivalProbability > 50) {
+  if (state.turnNumber >= 6 && successfulSignals >= 3 && m.signalEffectiveness > 55 && m.survivalProbability > 45) {
     return {
       ended: true,
       outcome: 'survived',
@@ -292,7 +293,7 @@ export function checkEndConditions(state: GameState): {
     };
   }
 
-  if (state.turnNumber >= 6 && successfulSignals >= 2 && m.signalEffectiveness > 70 && m.survivalProbability > 60) {
+  if (state.turnNumber >= 4 && successfulSignals >= 2 && m.signalEffectiveness > 65 && m.survivalProbability > 55) {
     return {
       ended: true,
       outcome: 'survived',

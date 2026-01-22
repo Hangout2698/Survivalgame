@@ -8,6 +8,11 @@ export interface SurvivalGuideContent {
 }
 
 export async function loadActiveSurvivalGuide(): Promise<SurvivalGuideContent | null> {
+  // If Supabase is not configured, return null gracefully
+  if (!supabase) {
+    return null;
+  }
+
   const { data, error } = await supabase
     .from('survival_guide_content')
     .select('id, raw_text, file_name')

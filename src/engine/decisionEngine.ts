@@ -1,6 +1,24 @@
 import type { Decision, GameState, DecisionOutcome } from '../types/game';
 import { updateMetrics, applyEnvironmentalEffects } from './metricsSystem';
 import { extractRelevantGuidance, generateGuidanceBasedFeedback } from './survivalGuideService';
+import {
+  getEducationalFeedback,
+  getPrinciplesForDecision,
+  searchPrinciples
+} from './survivalPrinciplesService';
+
+// Calculate success bonus based on principle alignment score
+function calculateSuccessBonus(state: GameState): number {
+  const alignment = state.principleAlignmentScore ?? 50;
+
+  // Players learning from principles get better odds
+  if (alignment >= 80) return 0.15; // +15% success chance
+  if (alignment >= 65) return 0.10; // +10%
+  if (alignment >= 50) return 0.05; // +5%
+  if (alignment < 35) return -0.08; // -8% (repeating mistakes)
+
+  return 0;
+}
 
 function scaleEnergyCost(baseCost: number, riskLevel: number, state: GameState): number {
   const { energy, hydration, injurySeverity } = state.metrics;
@@ -24,108 +42,69 @@ function scaleEnergyCost(baseCost: number, riskLevel: number, state: GameState):
   return baseCost;
 }
 
+// Helper function to determine decision quality based on game state
+function determineQuality(
+  decision: Decision,
+  state: GameState,
+  outcome: DecisionOutcome
+): 'excellent' | 'good' | 'poor' | 'critical-error' {
+  const { metrics, scenario, turnNumber } = state;
+
+  // Critical errors
+  if (decision.id === 'panic-move') return 'critical-error';
+
+  // Excellent decisions
+  if (decision.id === 'shelter' && turnNumber <= 3) return 'excellent';
+  if ((decision.id === 'use-whistle' || decision.id === 'use-mirror' || decision.id === 'use-flashlight-signal')
+      && metrics.signalEffectiveness > 60) return 'excellent';
+  if ((decision.id === 'treat-injury-full' || decision.id === 'treat-injury-partial')
+      && metrics.injurySeverity > 50) return 'excellent';
+  if (decision.id === 'start-fire'
+      && (scenario.temperature < 10 || metrics.bodyTemperature < 36)) return 'excellent';
+  if (decision.id === 'use-blanket' && metrics.bodyTemperature < 35.5) return 'excellent';
+
+  // Poor decisions
+  if (decision.riskLevel >= 8
+      && (metrics.energy < 50 || metrics.injurySeverity > 30)) return 'poor';
+  if ((decision.id.includes('descend') || decision.id.includes('navigate') || decision.id.includes('travel'))
+      && scenario.timeOfDay === 'night') return 'poor';
+  if ((decision.id.includes('travel') || decision.id.includes('descend'))
+      && (scenario.weather === 'storm' || scenario.weather === 'snow')) return 'poor';
+  if (decision.id === 'scout' && metrics.energy < 35) return 'poor';
+
+  // Good by default
+  return 'good';
+}
+
+// Fallback if database doesn't have a principle
+function getPrincipleFromContext(
+  decision: Decision,
+  state: GameState,
+  quality: string
+): string {
+  // Use searchPrinciples to find contextually relevant principle
+  const keywords = [decision.id, state.scenario.environment, quality];
+  const results = searchPrinciples(keywords.join(' '));
+
+  if (results.length > 0) {
+    return results[0].principle;
+  }
+
+  return 'Responding appropriately to the situation is key to survival.';
+}
+
 function evaluateDecisionQuality(decision: Decision, state: GameState, outcome: DecisionOutcome): {
   quality: 'excellent' | 'good' | 'poor' | 'critical-error';
   principle: string;
 } {
-  const { metrics, scenario, turnNumber } = state;
+  // Determine quality based on game state
+  const quality = determineQuality(decision, state, outcome);
 
-  if (decision.id === 'panic-move') {
-    return {
-      quality: 'critical-error',
-      principle: 'STAY PUT: Moving when lost without a clear plan dramatically increases risk and exhausts energy'
-    };
-  }
+  // Get principle from database
+  const principle = getEducationalFeedback(decision.id, quality)
+    || getPrincipleFromContext(decision, state, quality);
 
-  if (decision.id === 'shelter' && turnNumber <= 3) {
-    return {
-      quality: 'excellent',
-      principle: 'SHELTER PRIORITY: Building shelter early protects against environmental hazards and improves survival odds'
-    };
-  }
-
-  if ((decision.id === 'use-whistle' || decision.id === 'use-mirror' || decision.id === 'use-flashlight-signal') && metrics.signalEffectiveness > 60) {
-    return {
-      quality: 'excellent',
-      principle: 'SIGNALING: Using signaling equipment in favorable conditions maximizes rescue probability'
-    };
-  }
-
-  if (decision.id === 'rest' && metrics.energy < 40 && metrics.shelter > 50) {
-    return {
-      quality: 'good',
-      principle: 'ENERGY MANAGEMENT: Resting when exhausted in good shelter allows efficient recovery'
-    };
-  }
-
-  if (decision.id === 'drink' && metrics.hydration < 50) {
-    return {
-      quality: 'good',
-      principle: 'HYDRATION: Maintaining hydration prevents cognitive decline and maintains physical capability'
-    };
-  }
-
-  if ((decision.id === 'treat-injury-full' || decision.id === 'treat-injury-partial' || decision.id === 'improvise-treatment') && metrics.injurySeverity > 30) {
-    if (decision.id === 'treat-injury-full' && metrics.injurySeverity > 50) {
-      return {
-        quality: 'excellent',
-        principle: 'INJURY MANAGEMENT: Treating severe injuries with proper supplies prevents life-threatening complications'
-      };
-    }
-    return {
-      quality: 'good',
-      principle: 'INJURY MANAGEMENT: Treating injuries prevents infection and energy drain'
-    };
-  }
-
-  if (decision.id === 'start-fire' && (scenario.temperature < 10 || metrics.bodyTemperature < 36)) {
-    return {
-      quality: 'excellent',
-      principle: 'WARMTH: Fire provides critical warmth, morale boost, and signaling capability'
-    };
-  }
-
-  if (decision.id === 'use-blanket' && metrics.bodyTemperature < 35.5) {
-    return {
-      quality: 'excellent',
-      principle: 'HYPOTHERMIA PREVENTION: Emergency blankets prevent dangerous heat loss'
-    };
-  }
-
-  if (decision.riskLevel >= 8 && (metrics.energy < 50 || metrics.injurySeverity > 30)) {
-    return {
-      quality: 'poor',
-      principle: 'RISK ASSESSMENT: High-risk actions when weakened or injured dramatically increase failure probability'
-    };
-  }
-
-  if ((decision.id.includes('descend') || decision.id.includes('navigate') || decision.id.includes('travel')) &&
-      scenario.timeOfDay === 'night') {
-    return {
-      quality: 'poor',
-      principle: 'TIME MANAGEMENT: Traveling at night increases injury risk and reduces navigation accuracy'
-    };
-  }
-
-  if ((decision.id.includes('travel') || decision.id.includes('descend')) &&
-      (scenario.weather === 'storm' || scenario.weather === 'snow')) {
-    return {
-      quality: 'poor',
-      principle: 'WEATHER AWARENESS: Moving in severe weather increases exposure and disorientation risk'
-    };
-  }
-
-  if (decision.id === 'scout' && metrics.energy < 35) {
-    return {
-      quality: 'poor',
-      principle: 'ENERGY CONSERVATION: Scouting when low on energy risks exhaustion for uncertain gain'
-    };
-  }
-
-  return {
-    quality: 'good',
-    principle: 'ADAPTATION: Responding appropriately to the situation'
-  };
+  return { quality, principle };
 }
 
 function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
@@ -546,7 +525,7 @@ export function generateDecisions(state: GameState): Decision[] {
   decisions.push({
     id: 'rest',
     text: 'Rest to recover energy',
-    energyCost: -20,
+    energyCost: -25,
     riskLevel: 1,
     timeRequired: 2
   });
@@ -582,7 +561,9 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
   const delayedEffects: any[] = [];
   let environmentChange: any = undefined;
 
-  const roll = Math.random();
+  // Apply success bonus based on principle alignment
+  const successBonus = calculateSuccessBonus(state);
+  const roll = Math.random() + successBonus;
   const actualEnergyCost = scaleEnergyCost(decision.energyCost, decision.riskLevel, state);
 
   const guidance = state.survivalGuide
@@ -1416,8 +1397,9 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
     energy: (metricsChange.energy || 0) + (envEffects.energy || 0),
     bodyTemperature: (metricsChange.bodyTemperature || 0) + (envEffects.bodyTemperature || 0),
     hydration: (metricsChange.hydration || 0) + (envEffects.hydration || 0),
-    injurySeverity: (metricsChange.injurySeverity || 0),
+    injurySeverity: (metricsChange.injurySeverity || 0) + (envEffects.injurySeverity || 0),
     morale: (metricsChange.morale || 0) + (envEffects.morale || 0),
+    shelter: (metricsChange.shelter || 0) + (envEffects.shelter || 0),
     cumulativeRisk: (metricsChange.cumulativeRisk || 0) + (envEffects.cumulativeRisk || 0)
   };
 
@@ -1448,13 +1430,26 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
   }
 
   const navigationSuccessActions = ['retrace-trail', 'search-trail', 'follow-coast', 'find-exit', 'navigate-camp', 'backtrack-vehicle'];
-  if (navigationSuccessActions.includes(decision.id) && roll > 0.85) {
+  if (navigationSuccessActions.includes(decision.id) && roll > 0.70) {
     outcome.wasNavigationSuccess = true;
   }
 
   const evaluation = evaluateDecisionQuality(decision, state, outcome);
   outcome.decisionQuality = evaluation.quality;
   outcome.survivalPrincipleAlignment = evaluation.principle;
+
+  // Add principle-based educational feedback
+  if (outcome.decisionQuality === 'excellent' || outcome.decisionQuality === 'good') {
+    const educationalNote = getEducationalFeedback(decision.id, outcome.decisionQuality);
+    if (educationalNote && Math.random() < 0.6) { // 60% chance for variety
+      outcome.consequences.push(`💡 Survival principle: ${educationalNote}`);
+    }
+  } else if (outcome.decisionQuality === 'poor' || outcome.decisionQuality === 'critical-error') {
+    const cautionaryPrinciple = getEducationalFeedback(decision.id, outcome.decisionQuality);
+    if (cautionaryPrinciple) {
+      outcome.consequences.push(`⚠️ Consider: ${cautionaryPrinciple}`);
+    }
+  }
 
   return outcome;
 }
