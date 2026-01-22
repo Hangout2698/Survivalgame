@@ -1,0 +1,1460 @@
+import type { Decision, GameState, DecisionOutcome } from '../types/game';
+import { updateMetrics, applyEnvironmentalEffects } from './metricsSystem';
+import { extractRelevantGuidance, generateGuidanceBasedFeedback } from './survivalGuideService';
+
+function scaleEnergyCost(baseCost: number, riskLevel: number, state: GameState): number {
+  const { energy, hydration, injurySeverity } = state.metrics;
+
+  if (baseCost < 0) return baseCost;
+
+  if (riskLevel <= 2 && baseCost <= 20) {
+    if (energy >= 70 && hydration >= 60 && injurySeverity < 20) {
+      return Math.max(5, baseCost * 0.6);
+    } else if (energy >= 50 && hydration >= 50) {
+      return baseCost * 0.8;
+    }
+  }
+
+  if (energy < 30 || hydration < 30 || injurySeverity > 50) {
+    return baseCost * 1.4;
+  } else if (energy < 50 || hydration < 50 || injurySeverity > 30) {
+    return baseCost * 1.2;
+  }
+
+  return baseCost;
+}
+
+function evaluateDecisionQuality(decision: Decision, state: GameState, outcome: DecisionOutcome): {
+  quality: 'excellent' | 'good' | 'poor' | 'critical-error';
+  principle: string;
+} {
+  const { metrics, scenario, turnNumber } = state;
+
+  if (decision.id === 'panic-move') {
+    return {
+      quality: 'critical-error',
+      principle: 'STAY PUT: Moving when lost without a clear plan dramatically increases risk and exhausts energy'
+    };
+  }
+
+  if (decision.id === 'shelter' && turnNumber <= 3) {
+    return {
+      quality: 'excellent',
+      principle: 'SHELTER PRIORITY: Building shelter early protects against environmental hazards and improves survival odds'
+    };
+  }
+
+  if ((decision.id === 'use-whistle' || decision.id === 'use-mirror' || decision.id === 'use-flashlight-signal') && metrics.signalEffectiveness > 60) {
+    return {
+      quality: 'excellent',
+      principle: 'SIGNALING: Using signaling equipment in favorable conditions maximizes rescue probability'
+    };
+  }
+
+  if (decision.id === 'rest' && metrics.energy < 40 && metrics.shelter > 50) {
+    return {
+      quality: 'good',
+      principle: 'ENERGY MANAGEMENT: Resting when exhausted in good shelter allows efficient recovery'
+    };
+  }
+
+  if (decision.id === 'drink' && metrics.hydration < 50) {
+    return {
+      quality: 'good',
+      principle: 'HYDRATION: Maintaining hydration prevents cognitive decline and maintains physical capability'
+    };
+  }
+
+  if ((decision.id === 'treat-injury-full' || decision.id === 'treat-injury-partial' || decision.id === 'improvise-treatment') && metrics.injurySeverity > 30) {
+    if (decision.id === 'treat-injury-full' && metrics.injurySeverity > 50) {
+      return {
+        quality: 'excellent',
+        principle: 'INJURY MANAGEMENT: Treating severe injuries with proper supplies prevents life-threatening complications'
+      };
+    }
+    return {
+      quality: 'good',
+      principle: 'INJURY MANAGEMENT: Treating injuries prevents infection and energy drain'
+    };
+  }
+
+  if (decision.id === 'start-fire' && (scenario.temperature < 10 || metrics.bodyTemperature < 36)) {
+    return {
+      quality: 'excellent',
+      principle: 'WARMTH: Fire provides critical warmth, morale boost, and signaling capability'
+    };
+  }
+
+  if (decision.id === 'use-blanket' && metrics.bodyTemperature < 35.5) {
+    return {
+      quality: 'excellent',
+      principle: 'HYPOTHERMIA PREVENTION: Emergency blankets prevent dangerous heat loss'
+    };
+  }
+
+  if (decision.riskLevel >= 8 && (metrics.energy < 50 || metrics.injurySeverity > 30)) {
+    return {
+      quality: 'poor',
+      principle: 'RISK ASSESSMENT: High-risk actions when weakened or injured dramatically increase failure probability'
+    };
+  }
+
+  if ((decision.id.includes('descend') || decision.id.includes('navigate') || decision.id.includes('travel')) &&
+      scenario.timeOfDay === 'night') {
+    return {
+      quality: 'poor',
+      principle: 'TIME MANAGEMENT: Traveling at night increases injury risk and reduces navigation accuracy'
+    };
+  }
+
+  if ((decision.id.includes('travel') || decision.id.includes('descend')) &&
+      (scenario.weather === 'storm' || scenario.weather === 'snow')) {
+    return {
+      quality: 'poor',
+      principle: 'WEATHER AWARENESS: Moving in severe weather increases exposure and disorientation risk'
+    };
+  }
+
+  if (decision.id === 'scout' && metrics.energy < 35) {
+    return {
+      quality: 'poor',
+      principle: 'ENERGY CONSERVATION: Scouting when low on energy risks exhaustion for uncertain gain'
+    };
+  }
+
+  return {
+    quality: 'good',
+    principle: 'ADAPTATION: Responding appropriately to the situation'
+  };
+}
+
+function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
+  const { scenario, metrics, turnNumber, currentEnvironment } = state;
+  const decisions: Decision[] = [];
+
+  switch (currentEnvironment) {
+    case 'mountains':
+      decisions.push({
+        id: 'shelter',
+        text: 'Improve shelter and wait for rescue',
+        energyCost: 15,
+        riskLevel: 1,
+        timeRequired: 2
+      });
+
+      if (metrics.energy > 40 && turnNumber < 8) {
+        decisions.push({
+          id: 'retrace-trail',
+          text: 'Retrace your steps to find the trail',
+          energyCost: 35,
+          riskLevel: 5,
+          timeRequired: 3
+        });
+      }
+
+      if (metrics.energy > 45 && turnNumber < 6) {
+        decisions.push({
+          id: 'descend',
+          text: 'Descend carefully toward lower elevation',
+          energyCost: 40,
+          riskLevel: 7,
+          timeRequired: 4
+        });
+      }
+
+      if (metrics.energy > 25) {
+        decisions.push({
+          id: 'find-landmark',
+          text: 'Climb to higher ground to spot landmarks',
+          energyCost: 30,
+          riskLevel: 4,
+          timeRequired: 2
+        });
+      }
+      break;
+
+    case 'coast':
+      decisions.push({
+        id: 'shelter',
+        text: 'Build shelter above tide line',
+        energyCost: 15,
+        riskLevel: 1,
+        timeRequired: 2
+      });
+
+      if (metrics.energy > 40 && turnNumber < 8) {
+        decisions.push({
+          id: 'follow-coast',
+          text: 'Travel north along coast toward trail',
+          energyCost: 35,
+          riskLevel: 6,
+          timeRequired: 3
+        });
+      }
+
+      if (metrics.energy > 25) {
+        decisions.push({
+          id: 'scout-inland',
+          text: 'Scout inland for easier route',
+          energyCost: 25,
+          riskLevel: 4,
+          timeRequired: 2
+        });
+      }
+
+      decisions.push({
+        id: 'signal-water',
+        text: 'Create visible signal for boats',
+        energyCost: 20,
+        riskLevel: 2,
+        timeRequired: 1
+      });
+      break;
+
+    case 'desert':
+      decisions.push({
+        id: 'shelter',
+        text: 'Find shade and conserve energy',
+        energyCost: 10,
+        riskLevel: 1,
+        timeRequired: 2
+      });
+
+      if (metrics.energy > 45 && scenario.timeOfDay !== 'midday' && scenario.timeOfDay !== 'afternoon') {
+        decisions.push({
+          id: 'travel-west',
+          text: 'Travel west toward highway',
+          energyCost: 45,
+          riskLevel: 8,
+          timeRequired: 4
+        });
+      }
+
+      if (metrics.energy > 40 && turnNumber < 6) {
+        decisions.push({
+          id: 'backtrack-vehicle',
+          text: 'Backtrack toward your vehicle',
+          energyCost: 40,
+          riskLevel: 6,
+          timeRequired: 3
+        });
+      }
+
+      if (metrics.energy > 25) {
+        decisions.push({
+          id: 'scout-shade',
+          text: 'Search for water sources or shade',
+          energyCost: 30,
+          riskLevel: 5,
+          timeRequired: 2
+        });
+      }
+      break;
+
+    case 'forest':
+      decisions.push({
+        id: 'shelter',
+        text: 'Build shelter and wait',
+        energyCost: 15,
+        riskLevel: 1,
+        timeRequired: 2
+      });
+
+      if (metrics.energy > 40 && turnNumber < 8) {
+        decisions.push({
+          id: 'search-trail',
+          text: 'Search systematically for the trail',
+          energyCost: 35,
+          riskLevel: 5,
+          timeRequired: 3
+        });
+      }
+
+      if (metrics.energy > 30) {
+        decisions.push({
+          id: 'follow-stream',
+          text: 'Follow terrain downhill to find streams',
+          energyCost: 30,
+          riskLevel: 4,
+          timeRequired: 3
+        });
+      }
+
+      if (metrics.energy > 25) {
+        decisions.push({
+          id: 'call-out',
+          text: 'Call out and listen for your group',
+          energyCost: 15,
+          riskLevel: 1,
+          timeRequired: 1
+        });
+      }
+      break;
+
+    case 'tundra':
+      decisions.push({
+        id: 'shelter',
+        text: 'Create wind break and wait out weather',
+        energyCost: 20,
+        riskLevel: 1,
+        timeRequired: 2
+      });
+
+      if (metrics.energy > 50 && scenario.weather !== 'storm' && scenario.weather !== 'snow') {
+        decisions.push({
+          id: 'navigate-camp',
+          text: 'Navigate south-southwest toward camp',
+          energyCost: 50,
+          riskLevel: 9,
+          timeRequired: 4
+        });
+      }
+
+      if (metrics.energy > 30 && (scenario.weather === 'clear' || scenario.weather === 'wind')) {
+        decisions.push({
+          id: 'retrace-tracks',
+          text: 'Try to retrace your tracks',
+          energyCost: 35,
+          riskLevel: 7,
+          timeRequired: 3
+        });
+      }
+      break;
+
+    case 'urban-edge':
+      decisions.push({
+        id: 'shelter',
+        text: 'Find safe shelter in structures',
+        energyCost: 15,
+        riskLevel: 2,
+        timeRequired: 2
+      });
+
+      if (metrics.energy > 40 && turnNumber < 8) {
+        decisions.push({
+          id: 'find-exit',
+          text: 'Navigate toward populated areas',
+          energyCost: 35,
+          riskLevel: 5,
+          timeRequired: 3
+        });
+      }
+
+      if (metrics.energy > 30) {
+        decisions.push({
+          id: 'climb-vantage',
+          text: 'Climb structure for vantage point',
+          energyCost: 25,
+          riskLevel: 6,
+          timeRequired: 2
+        });
+      }
+
+      decisions.push({
+        id: 'signal-urban',
+        text: 'Create visible signal or noise',
+        energyCost: 15,
+        riskLevel: 1,
+        timeRequired: 1
+      });
+      break;
+  }
+
+  return decisions;
+}
+
+function getEquipmentBasedDecisions(state: GameState): Decision[] {
+  const decisions: Decision[] = [];
+  const { equipment, scenario, metrics } = state;
+
+  if (equipment.some(e => e.name.toLowerCase().includes('whistle'))) {
+    decisions.push({
+      id: 'use-whistle',
+      text: 'Use whistle to signal for help',
+      energyCost: 10,
+      riskLevel: 1,
+      timeRequired: 1
+    });
+  }
+
+  if (equipment.some(e => e.name.toLowerCase().includes('signal mirror') || e.name.toLowerCase().includes('mirror'))) {
+    if (scenario.timeOfDay === 'midday' || scenario.timeOfDay === 'morning' || scenario.timeOfDay === 'afternoon') {
+      decisions.push({
+        id: 'use-mirror',
+        text: 'Use signal mirror to attract attention',
+        energyCost: 15,
+        riskLevel: 1,
+        timeRequired: 1
+      });
+    }
+  }
+
+  if (equipment.some(e => e.name.toLowerCase().includes('flashlight'))) {
+    if (scenario.timeOfDay === 'night' || scenario.timeOfDay === 'dusk') {
+      decisions.push({
+        id: 'use-flashlight-scout',
+        text: 'Use flashlight to scout area carefully',
+        energyCost: 20,
+        riskLevel: 2,
+        timeRequired: 2
+      });
+    }
+    decisions.push({
+      id: 'use-flashlight-signal',
+      text: 'Use flashlight to signal for rescue',
+      energyCost: 10,
+      riskLevel: 1,
+      timeRequired: 1
+    });
+  }
+
+  if (equipment.some(e => e.name.toLowerCase().includes('emergency blanket') || e.name.toLowerCase().includes('blanket'))) {
+    if (scenario.temperature < 15 || scenario.weather === 'snow' || scenario.weather === 'storm') {
+      decisions.push({
+        id: 'use-blanket',
+        text: 'Use emergency blanket for warmth',
+        energyCost: 10,
+        riskLevel: 1,
+        timeRequired: 1
+      });
+    }
+  }
+
+  if (equipment.some(e => e.name.toLowerCase().includes('lighter') || e.name.toLowerCase().includes('matches'))) {
+    if (!equipment.some(e => e.name.toLowerCase().includes('firewood'))) {
+      decisions.push({
+        id: 'gather-start-fire',
+        text: 'Gather materials and start fire with lighter',
+        energyCost: 30,
+        riskLevel: 3,
+        timeRequired: 3
+      });
+    }
+  }
+
+  if (equipment.some(e => e.name.toLowerCase().includes('knife'))) {
+    decisions.push({
+      id: 'use-knife-shelter',
+      text: 'Use knife to improve shelter construction',
+      energyCost: 25,
+      riskLevel: 2,
+      timeRequired: 2
+    });
+  }
+
+  if (equipment.some(e => e.name.toLowerCase().includes('rope'))) {
+    if (state.currentEnvironment === 'mountains' && metrics.energy > 40) {
+      decisions.push({
+        id: 'use-rope-descend',
+        text: 'Use rope to safely descend steep terrain',
+        energyCost: 35,
+        riskLevel: 4,
+        timeRequired: 3
+      });
+    }
+  }
+
+  if (equipment.some(e => e.name.toLowerCase().includes('water') || e.name.toLowerCase().includes('bottle'))) {
+    decisions.push({
+      id: 'drink',
+      text: 'Drink water supply',
+      energyCost: 5,
+      riskLevel: 1,
+      timeRequired: 1
+    });
+  }
+
+  if (metrics.injurySeverity > 0) {
+    const hasFirstAid = equipment.some(e => e.name.toLowerCase().includes('first aid'));
+    const hasBandages = equipment.some(e => e.name.toLowerCase().includes('bandage'));
+    const hasAntiseptic = equipment.some(e => e.name.toLowerCase().includes('antiseptic') || e.name.toLowerCase().includes('alcohol'));
+    const hasPainkillers = equipment.some(e => e.name.toLowerCase().includes('painkiller') || e.name.toLowerCase().includes('ibuprofen'));
+
+    if (hasFirstAid) {
+      decisions.push({
+        id: 'treat-injury-full',
+        text: 'Treat injuries thoroughly with first aid kit',
+        energyCost: 10,
+        riskLevel: 1,
+        timeRequired: 1
+      });
+    } else if (hasBandages || hasAntiseptic) {
+      decisions.push({
+        id: 'treat-injury-partial',
+        text: 'Treat injuries with available medical supplies',
+        energyCost: 12,
+        riskLevel: 2,
+        timeRequired: 1
+      });
+    }
+
+    if (metrics.injurySeverity > 20 && !hasFirstAid) {
+      decisions.push({
+        id: 'improvise-treatment',
+        text: 'Improvise treatment with whatever is available',
+        energyCost: 15,
+        riskLevel: 3,
+        timeRequired: 2
+      });
+    }
+  }
+
+  if (equipment.some(e => e.name.toLowerCase().includes('energy bar') || e.name.toLowerCase().includes('berries') || e.name.toLowerCase().includes('food'))) {
+    decisions.push({
+      id: 'eat-food',
+      text: 'Eat food to restore energy',
+      energyCost: 5,
+      riskLevel: 1,
+      timeRequired: 1
+    });
+  }
+
+  if (equipment.some(e => e.name.toLowerCase().includes('lighter') || e.name.toLowerCase().includes('matches')) &&
+      equipment.some(e => e.name.toLowerCase().includes('firewood'))) {
+    decisions.push({
+      id: 'start-fire',
+      text: 'Start fire with lighter and firewood',
+      energyCost: 15,
+      riskLevel: 2,
+      timeRequired: 2
+    });
+  }
+
+  return decisions;
+}
+
+export function generateDecisions(state: GameState): Decision[] {
+  const { scenario, metrics, turnNumber } = state;
+  const decisions: Decision[] = [];
+
+  const environmentDecisions = getEnvironmentSpecificDecisions(state);
+  decisions.push(...environmentDecisions);
+
+  const equipmentDecisions = getEquipmentBasedDecisions(state);
+  decisions.push(...equipmentDecisions);
+
+  if (metrics.energy > 25 && state.currentEnvironment !== 'desert') {
+    decisions.push({
+      id: 'scout',
+      text: 'Scout immediate area for resources',
+      energyCost: 25,
+      riskLevel: 3,
+      timeRequired: 2
+    });
+  }
+
+  decisions.push({
+    id: 'rest',
+    text: 'Rest to recover energy',
+    energyCost: -20,
+    riskLevel: 1,
+    timeRequired: 2
+  });
+
+  if (scenario.weather === 'storm' || scenario.weather === 'snow') {
+    decisions.push({
+      id: 'fortify',
+      text: 'Fortify shelter against weather',
+      energyCost: 30,
+      riskLevel: 2,
+      timeRequired: 3
+    });
+  }
+
+  if (turnNumber > 5 && metrics.morale < 40 && metrics.energy > 45) {
+    decisions.push({
+      id: 'panic-move',
+      text: 'Push desperately toward help',
+      energyCost: 50,
+      riskLevel: 9,
+      timeRequired: 4
+    });
+  }
+
+  return decisions.slice(0, 6);
+}
+
+export function applyDecision(decision: Decision, state: GameState): DecisionOutcome {
+  const consequences: string[] = [];
+  let metricsChange: any = {};
+  let equipmentChanges: any = {};
+  let immediateEffect = '';
+  const delayedEffects: any[] = [];
+  let environmentChange: any = undefined;
+
+  const roll = Math.random();
+  const actualEnergyCost = scaleEnergyCost(decision.energyCost, decision.riskLevel, state);
+
+  const guidance = state.survivalGuide
+    ? extractRelevantGuidance(state.survivalGuide, state, 'outcome')
+    : '';
+
+  const guidanceFeedback = state.survivalGuide
+    ? generateGuidanceBasedFeedback(guidance, decision.id)
+    : [];
+
+  switch (decision.id) {
+    case 'shelter':
+      const shelterIncrease = state.metrics.shelter < 70 ? 25 : 15;
+      metricsChange = {
+        energy: -actualEnergyCost,
+        bodyTemperature: state.scenario.temperature < 15 ? 0.3 : 0.1,
+        morale: 5,
+        shelter: shelterIncrease,
+        cumulativeRisk: -2
+      };
+      immediateEffect = 'You gather materials and improve your shelter.';
+      consequences.push('Your protection from the elements increases.');
+      consequences.push('You feel slightly more in control.');
+      break;
+
+    case 'signal':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        morale: roll > 0.7 ? 8 : 2
+      };
+      if (state.metrics.signalEffectiveness > 60 && roll > 0.5) {
+        immediateEffect = 'You create a visible signal. It might be seen.';
+        consequences.push('Your signal is well-positioned.');
+        metricsChange.cumulativeRisk = -5;
+      } else {
+        immediateEffect = 'You prepare a signal, though visibility is poor.';
+        consequences.push('The conditions limit effectiveness.');
+      }
+      break;
+
+    case 'retrace-trail':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -7,
+        cumulativeRisk: 8
+      };
+
+      if (roll > 0.7) {
+        immediateEffect = 'You find markers you recognize. You are getting closer to the trail.';
+        consequences.push('Your navigation is paying off.');
+        metricsChange.morale = 15;
+        metricsChange.cumulativeRisk = -10;
+      } else if (roll > 0.4) {
+        immediateEffect = 'You move carefully but cannot be certain you are heading the right way.';
+        consequences.push('The terrain all looks similar.');
+        metricsChange.morale = -2;
+      } else {
+        immediateEffect = 'You lose more elevation than intended. This does not feel right.';
+        consequences.push('You may have gone the wrong direction.');
+        metricsChange.morale = -8;
+        metricsChange.cumulativeRisk = 5;
+      }
+      break;
+
+    case 'descend':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -10,
+        cumulativeRisk: 12
+      };
+
+      if (roll < 0.25) {
+        metricsChange.injurySeverity = 20;
+        immediateEffect = 'You slip on loose rock. The fall is hard.';
+        consequences.push('You are injured and shaken.');
+        metricsChange.morale = -15;
+        delayedEffects.push({
+          turn: state.turnNumber + 2,
+          effect: 'The injury from your fall is worsening.',
+          metricsChange: { energy: -12, morale: -8 }
+        });
+      } else if (roll > 0.8 && state.turnNumber > 6) {
+        immediateEffect = 'You descend carefully and spot signs of a trail below.';
+        consequences.push('You might have found a way down.');
+        metricsChange.morale = 12;
+        metricsChange.cumulativeRisk = -8;
+        if (roll > 0.9) {
+          environmentChange = 'forest';
+          consequences.push('The elevation drops into forested terrain.');
+        }
+      } else {
+        immediateEffect = 'You descend slowly. The terrain is challenging.';
+        consequences.push('Progress is exhausting but steady.');
+        metricsChange.morale = -4;
+        if (roll > 0.6 && state.turnNumber > 4) {
+          environmentChange = 'forest';
+          consequences.push('You reach lower elevation among trees.');
+        }
+      }
+      break;
+
+    case 'find-landmark':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -6,
+        cumulativeRisk: 3
+      };
+
+      if (roll > 0.6) {
+        immediateEffect = 'From higher ground you spot a valley you recognize.';
+        consequences.push('You now have better sense of direction.');
+        metricsChange.morale = 10;
+        metricsChange.cumulativeRisk = -6;
+      } else if (roll > 0.3) {
+        immediateEffect = 'You climb but visibility is poor. No useful landmarks visible.';
+        consequences.push('The effort did not help much.');
+        metricsChange.morale = -4;
+      } else {
+        immediateEffect = 'The climb exposes you to wind. You see nothing helpful.';
+        consequences.push('You are colder and no better oriented.');
+        metricsChange.bodyTemperature = -0.5;
+        metricsChange.morale = -6;
+      }
+      break;
+
+    case 'follow-coast':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -8,
+        cumulativeRisk: 10
+      };
+
+      if (roll > 0.75) {
+        immediateEffect = 'You navigate the coast and spot the trail access point ahead.';
+        consequences.push('You are close to safety.');
+        metricsChange.morale = 18;
+        metricsChange.cumulativeRisk = -15;
+        if (roll > 0.85) {
+          environmentChange = 'forest';
+          consequences.push('The landscape transitions to coastal forest.');
+        }
+      } else if (roll < 0.3) {
+        immediateEffect = 'The tide cuts off your route. You must backtrack.';
+        consequences.push('You lost time and energy.');
+        metricsChange.energy = -15;
+        metricsChange.morale = -10;
+      } else {
+        immediateEffect = 'You make progress along the rocky coast.';
+        consequences.push('The route is slow but passable.');
+        metricsChange.morale = 2;
+      }
+      break;
+
+    case 'scout-inland':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -5,
+        cumulativeRisk: 5
+      };
+
+      if (roll > 0.6) {
+        immediateEffect = 'You find a gentler route inland that bypasses the rocks.';
+        consequences.push('This route looks more promising.');
+        metricsChange.morale = 8;
+        if (roll > 0.75) {
+          environmentChange = 'forest';
+          consequences.push('You move into the treeline.');
+        }
+      } else {
+        immediateEffect = 'The inland route is thick with brush. No advantage.';
+        consequences.push('You return to the coast.');
+        metricsChange.morale = -3;
+      }
+      break;
+
+    case 'signal-water':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        morale: 4
+      };
+      if (roll > 0.6) {
+        immediateEffect = 'You arrange rocks and debris into a visible pattern.';
+        consequences.push('It might be seen from the water or air.');
+        metricsChange.cumulativeRisk = -4;
+      } else {
+        immediateEffect = 'You create a signal but conditions limit visibility.';
+        consequences.push('It may not help.');
+      }
+      break;
+
+    case 'travel-west':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -15,
+        cumulativeRisk: 15
+      };
+
+      if (roll > 0.8 && state.turnNumber > 5) {
+        immediateEffect = 'Through heat haze you spot structures in the distance.';
+        consequences.push('The highway might be within reach.');
+        metricsChange.morale = 15;
+        metricsChange.cumulativeRisk = -12;
+      } else if (roll < 0.3) {
+        immediateEffect = 'The heat is brutal. You make little progress.';
+        consequences.push('You are severely dehydrated.');
+        metricsChange.energy = -15;
+        metricsChange.hydration = -10;
+        metricsChange.morale = -12;
+      } else {
+        immediateEffect = 'You walk west. Landmarks remain distant and unclear.';
+        consequences.push('You are not sure if this helps.');
+        metricsChange.morale = -5;
+      }
+      break;
+
+    case 'backtrack-vehicle':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -9,
+        cumulativeRisk: 8
+      };
+
+      if (roll > 0.7) {
+        immediateEffect = 'You recognize terrain features. The vehicle is this direction.';
+        consequences.push('You are retracing your path correctly.');
+        metricsChange.morale = 10;
+        metricsChange.cumulativeRisk = -8;
+      } else {
+        immediateEffect = 'You walk back but nothing looks familiar.';
+        consequences.push('You may be going the wrong way.');
+        metricsChange.morale = -7;
+      }
+      break;
+
+    case 'scout-shade':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -7,
+        cumulativeRisk: 6
+      };
+
+      if (roll > 0.7) {
+        immediateEffect = 'You find a rock overhang with shade.';
+        consequences.push('You can rest out of the sun.');
+        metricsChange.morale = 8;
+        metricsChange.bodyTemperature = -0.4;
+      } else if (roll > 0.5) {
+        immediateEffect = 'You find scattered cacti but no water source.';
+        consequences.push('The search was not fruitful.');
+        metricsChange.morale = -2;
+      } else {
+        immediateEffect = 'The search exhausts you with no reward.';
+        consequences.push('You found nothing useful.');
+        metricsChange.morale = -6;
+      }
+      break;
+
+    case 'search-trail':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -7,
+        cumulativeRisk: 7
+      };
+
+      if (roll > 0.75) {
+        immediateEffect = 'You find trail markers through the trees.';
+        consequences.push('You have found the trail.');
+        metricsChange.morale = 20;
+        metricsChange.cumulativeRisk = -15;
+      } else if (roll > 0.4) {
+        immediateEffect = 'You search methodically but find no clear trail.';
+        consequences.push('The forest remains confusing.');
+        metricsChange.morale = -4;
+        if (roll > 0.55 && state.currentEnvironment === 'mountains') {
+          environmentChange = 'forest';
+          consequences.push('Your search brings you into denser woods.');
+        }
+      } else {
+        immediateEffect = 'You become more disoriented during the search.';
+        consequences.push('You are not sure where you are now.');
+        metricsChange.morale = -10;
+        metricsChange.cumulativeRisk = 5;
+      }
+      break;
+
+    case 'follow-stream':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -6,
+        cumulativeRisk: 5
+      };
+
+      if (roll > 0.6) {
+        immediateEffect = 'You follow terrain down and find a stream.';
+        consequences.push('Fresh water and a landmark.');
+        metricsChange.morale = 12;
+        equipmentChanges.added = [{ name: 'Water bottle (full)', quantity: 1, condition: 'good' as const }];
+      } else {
+        immediateEffect = 'You descend but find no water.';
+        consequences.push('The terrain is difficult.');
+        metricsChange.morale = -3;
+      }
+      break;
+
+    case 'call-out':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        morale: 2
+      };
+
+      if (roll > 0.8 && state.turnNumber < 6) {
+        immediateEffect = 'You hear a faint response in the distance.';
+        consequences.push('Your group might be nearby.');
+        metricsChange.morale = 15;
+        metricsChange.cumulativeRisk = -10;
+      } else {
+        immediateEffect = 'You call out. Only silence answers.';
+        consequences.push('No one is within earshot.');
+        metricsChange.morale = -2;
+      }
+      break;
+
+    case 'navigate-camp':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -12,
+        bodyTemperature: -0.8,
+        cumulativeRisk: 18
+      };
+
+      if (roll > 0.75 && state.turnNumber > 4) {
+        immediateEffect = 'Through a break in weather you spot camp structures.';
+        consequences.push('You navigated correctly. Safety is ahead.');
+        metricsChange.morale = 25;
+        metricsChange.cumulativeRisk = -20;
+      } else if (roll < 0.35) {
+        immediateEffect = 'Visibility drops to zero. You stop, disoriented and freezing.';
+        consequences.push('You may have walked past camp.');
+        metricsChange.morale = -18;
+        metricsChange.bodyTemperature = -0.5;
+        metricsChange.injurySeverity = 10;
+      } else {
+        immediateEffect = 'You travel through whiteout. Direction is uncertain.';
+        consequences.push('You cannot confirm you are heading the right way.');
+        metricsChange.morale = -8;
+      }
+      break;
+
+    case 'retrace-tracks':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -8,
+        bodyTemperature: -0.4,
+        cumulativeRisk: 10
+      };
+
+      if (roll > 0.65) {
+        immediateEffect = 'You find your earlier tracks and follow them back.';
+        consequences.push('You are retracing your path.');
+        metricsChange.morale = 12;
+        metricsChange.cumulativeRisk = -8;
+      } else {
+        immediateEffect = 'Wind has erased most tracks. You guess at direction.';
+        consequences.push('You are not confident in your heading.');
+        metricsChange.morale = -6;
+      }
+      break;
+
+    case 'find-exit':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -7,
+        cumulativeRisk: 8
+      };
+
+      if (roll > 0.7) {
+        immediateEffect = 'You find a gap in the fencing that leads to streets.';
+        consequences.push('You can see people and traffic ahead.');
+        metricsChange.morale = 20;
+        metricsChange.cumulativeRisk = -15;
+      } else if (roll < 0.3) {
+        immediateEffect = 'You encounter a barrier you cannot pass. Must backtrack.';
+        consequences.push('You wasted time and energy.');
+        metricsChange.morale = -10;
+        metricsChange.energy = -10;
+        if (roll < 0.15) {
+          environmentChange = 'forest';
+          consequences.push('You end up in overgrown wasteland.');
+        }
+      } else {
+        immediateEffect = 'You navigate through debris toward populated areas.';
+        consequences.push('Progress is slow but you are moving the right direction.');
+        metricsChange.morale = 4;
+      }
+      break;
+
+    case 'climb-vantage':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -4,
+        cumulativeRisk: 8
+      };
+
+      if (roll > 0.6) {
+        immediateEffect = 'From elevation you spot active streets to the west.';
+        consequences.push('You now know which direction to go.');
+        metricsChange.morale = 10;
+        metricsChange.cumulativeRisk = -6;
+      } else if (roll < 0.25) {
+        immediateEffect = 'The structure shifts under you. You barely avoid falling.';
+        consequences.push('That was dangerous.');
+        metricsChange.morale = -8;
+        metricsChange.injurySeverity = 8;
+      } else {
+        immediateEffect = 'You climb up but buildings block most sightlines.';
+        consequences.push('You learned little.');
+        metricsChange.morale = -2;
+      }
+      break;
+
+    case 'signal-urban':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        morale: 3
+      };
+
+      if (roll > 0.65) {
+        immediateEffect = 'You hear a distant response. Someone heard you.';
+        consequences.push('Help might be coming.');
+        metricsChange.morale = 12;
+        metricsChange.cumulativeRisk = -8;
+      } else {
+        immediateEffect = 'You make noise and set up markers. No response.';
+        consequences.push('The area seems deserted.');
+      }
+      break;
+
+    case 'scout':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -4
+      };
+
+      if (roll > 0.75) {
+        immediateEffect = 'You find a stream with fresh water!';
+        consequences.push('You can refill your water supply.');
+        metricsChange.morale = 10;
+        equipmentChanges.added = [{ name: 'Water bottle (full)', quantity: 1, condition: 'good' as const }];
+      } else if (roll > 0.6) {
+        immediateEffect = 'You find some dry firewood and tinder.';
+        consequences.push('This could help with warmth.');
+        metricsChange.morale = 6;
+        equipmentChanges.added = [{ name: 'Firewood bundle', quantity: 1, condition: 'good' as const }];
+      } else if (roll > 0.4) {
+        immediateEffect = 'You find some edible berries.';
+        consequences.push('A small food source helps morale.');
+        metricsChange.morale = 4;
+        equipmentChanges.added = [{ name: 'Berries (handful)', quantity: 1, condition: 'good' as const }];
+      } else if (roll > 0.2) {
+        immediateEffect = 'You scout the area but find little of value.';
+        consequences.push('At least you know what is nearby.');
+        metricsChange.morale = -3;
+      } else {
+        immediateEffect = 'The scouting effort yields nothing useful.';
+        consequences.push('You wasted energy for no gain.');
+        metricsChange.morale = -6;
+        metricsChange.cumulativeRisk = 3;
+      }
+      break;
+
+    case 'rest':
+      const shelterBonus = Math.floor(state.metrics.shelter / 20);
+      const baseEnergyGain = -decision.energyCost;
+      const totalEnergyGain = baseEnergyGain + shelterBonus;
+
+      metricsChange = {
+        energy: totalEnergyGain,
+        morale: 5
+      };
+
+      if (state.metrics.shelter > 50) {
+        immediateEffect = 'You rest in your shelter. Your energy recovers well.';
+        consequences.push('Good shelter allows for effective rest.');
+      } else {
+        immediateEffect = 'You rest and focus on staying calm.';
+        consequences.push('Your energy recovers, but conditions are challenging.');
+      }
+
+      if (state.scenario.weather === 'storm' && state.metrics.shelter < 40) {
+        metricsChange.bodyTemperature = -0.3;
+        consequences.push('The harsh weather makes rest difficult.');
+      }
+      break;
+
+    case 'drink':
+      const waterItem = state.equipment.find(e => e.name.includes('Water') || e.name.includes('water'));
+      metricsChange = {
+        energy: -actualEnergyCost,
+        hydration: 25,
+        morale: 4
+      };
+      immediateEffect = 'You drink your water supply.';
+      consequences.push('You feel better. The water is now gone.');
+      if (waterItem) {
+        equipmentChanges.removed = [waterItem.name];
+      }
+      break;
+
+    case 'fortify':
+      metricsChange = {
+        energy: -decision.energyCost,
+        bodyTemperature: 0.5,
+        morale: 8,
+        shelter: 30,
+        cumulativeRisk: -5
+      };
+      immediateEffect = 'You reinforce your shelter against the harsh conditions.';
+      consequences.push('Your protection improves significantly.');
+      break;
+
+    case 'panic-move':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -12,
+        morale: -15,
+        cumulativeRisk: 20
+      };
+      immediateEffect = 'Desperation drives you forward. You move recklessly.';
+      consequences.push('You push past exhaustion.');
+      if (roll < 0.5) {
+        metricsChange.injurySeverity = 25;
+        consequences.push('You fall hard. Something might be broken.');
+        delayedEffects.push({
+          turn: state.turnNumber + 1,
+          effect: 'The injury from your fall is worse than you realized.',
+          metricsChange: { energy: -15, morale: -10, injurySeverity: 15 }
+        });
+      } else {
+        consequences.push('You cover ground but have no idea if you are heading the right direction.');
+      }
+      break;
+
+    case 'treat-injury-full':
+      const firstAidItem = state.equipment.find(e => e.name.includes('First aid') || e.name.includes('first aid'));
+      const healingAmount = state.metrics.injurySeverity > 50 ? -25 : -20;
+      metricsChange = {
+        energy: -actualEnergyCost,
+        injurySeverity: healingAmount,
+        morale: 8
+      };
+      immediateEffect = 'You carefully treat your injuries with the first aid kit.';
+      consequences.push('The wound is properly cleaned, disinfected, and bandaged.');
+      consequences.push('Pain and infection risk are significantly reduced.');
+      if (firstAidItem) {
+        equipmentChanges.removed = [firstAidItem.name];
+      }
+      break;
+
+    case 'treat-injury-partial':
+      const bandageItem = state.equipment.find(e => e.name.toLowerCase().includes('bandage'));
+      const antisepticItem = state.equipment.find(e => e.name.toLowerCase().includes('antiseptic') || e.name.toLowerCase().includes('alcohol'));
+      const hasBoth = bandageItem && antisepticItem;
+      const partialHealAmount = hasBoth ? -15 : -10;
+
+      metricsChange = {
+        energy: -actualEnergyCost,
+        injurySeverity: partialHealAmount,
+        morale: hasBoth ? 6 : 4
+      };
+
+      if (hasBoth) {
+        immediateEffect = 'You clean the wound with antiseptic and apply fresh bandages.';
+        consequences.push('The treatment is effective with the supplies you have.');
+        equipmentChanges.removed = [bandageItem.name, antisepticItem.name];
+      } else if (antisepticItem) {
+        immediateEffect = 'You disinfect the wound but lack proper bandages.';
+        consequences.push('The antiseptic helps prevent infection.');
+        equipmentChanges.removed = [antisepticItem.name];
+      } else {
+        immediateEffect = 'You apply bandages to your injuries.';
+        consequences.push('The bleeding is controlled but the wound needs cleaning.');
+        if (bandageItem) {
+          equipmentChanges.removed = [bandageItem.name];
+        }
+      }
+      break;
+
+    case 'improvise-treatment':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        injurySeverity: roll > 0.7 ? -12 : roll > 0.4 ? -7 : -3,
+        morale: roll > 0.6 ? 4 : 2
+      };
+      if (roll > 0.7) {
+        immediateEffect = 'You improvise bandages from clean clothing and create a compress.';
+        consequences.push('Your makeshift treatment is surprisingly effective.');
+        consequences.push('The bleeding stops and pressure helps with the pain.');
+      } else if (roll > 0.4) {
+        immediateEffect = 'You do what you can with available materials.';
+        consequences.push('The makeshift treatment provides some relief.');
+        consequences.push('It is better than nothing but far from ideal.');
+      } else {
+        immediateEffect = 'Your improvised treatment is barely effective.';
+        consequences.push('Without proper supplies, you can only manage basic care.');
+        metricsChange.injurySeverity = -3;
+        metricsChange.morale = 0;
+      }
+      break;
+
+    case 'eat-food':
+      const foodItem = state.equipment.find(e => e.name.includes('Energy bar') || e.name.includes('Berries') || e.name.toLowerCase().includes('food'));
+      const isEnergyBar = foodItem?.name.includes('Energy bar');
+      const energyGain = isEnergyBar ? 30 : 18;
+
+      metricsChange = {
+        energy: energyGain - decision.energyCost,
+        morale: isEnergyBar ? 8 : 5,
+        hydration: isEnergyBar ? 0 : -2
+      };
+
+      immediateEffect = isEnergyBar
+        ? 'You eat an energy bar. Your energy increases significantly.'
+        : 'You eat the berries. They provide nourishment.';
+      consequences.push(`You gain ${energyGain} energy.`);
+
+      if (foodItem) {
+        if (foodItem.quantity > 1) {
+          equipmentChanges.updated = [{
+            ...foodItem,
+            quantity: foodItem.quantity - 1
+          }];
+          consequences.push(`You have ${foodItem.quantity - 1} remaining.`);
+        } else {
+          equipmentChanges.removed = [foodItem.name];
+          consequences.push('That was your last food.');
+        }
+      }
+      break;
+
+    case 'start-fire':
+      const firewoodItem = state.equipment.find(e => e.name.includes('Firewood') || e.name.includes('firewood'));
+      metricsChange = {
+        energy: -decision.energyCost,
+        bodyTemperature: 1.2,
+        morale: 12,
+        cumulativeRisk: -8
+      };
+      immediateEffect = 'You successfully start a fire. Warmth spreads through you.';
+      consequences.push('Your body temperature increases significantly.');
+      consequences.push('The fire provides comfort and safety.');
+      if (firewoodItem) {
+        equipmentChanges.removed = [firewoodItem.name];
+      }
+      break;
+
+    case 'use-whistle':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        morale: roll > 0.6 ? 8 : 3
+      };
+      if (roll > 0.75 && state.turnNumber < 10) {
+        immediateEffect = 'You blow the whistle in three sharp bursts. A faint response echoes back.';
+        consequences.push('Someone heard you. Help might be coming.');
+        metricsChange.morale = 20;
+        metricsChange.cumulativeRisk = -12;
+      } else if (roll > 0.4) {
+        immediateEffect = 'You signal with the whistle. The sound carries well.';
+        consequences.push('If anyone is nearby, they will hear it.');
+        metricsChange.cumulativeRisk = -4;
+      } else {
+        immediateEffect = 'You blow the whistle but hear no response.';
+        consequences.push('The area seems empty.');
+        metricsChange.morale = -2;
+      }
+      break;
+
+    case 'use-mirror':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        morale: 5
+      };
+      if (state.metrics.signalEffectiveness > 60 && roll > 0.65) {
+        immediateEffect = 'You flash the signal mirror toward the sky. A helicopter banks toward you.';
+        consequences.push('They saw your signal! Rescue is coming!');
+        metricsChange.morale = 25;
+        metricsChange.cumulativeRisk = -20;
+      } else if (roll > 0.5) {
+        immediateEffect = 'You reflect sunlight with the mirror across the landscape.';
+        consequences.push('The signal is visible from a great distance.');
+        metricsChange.cumulativeRisk = -6;
+      } else {
+        immediateEffect = 'You use the signal mirror but clouds obscure the sun.';
+        consequences.push('The timing was not ideal.');
+        metricsChange.morale = -1;
+      }
+      break;
+
+    case 'use-flashlight-scout':
+      const flashlightScout = state.equipment.find(e => e.name.toLowerCase().includes('flashlight'));
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -4
+      };
+      if (roll > 0.7) {
+        immediateEffect = 'Using the flashlight, you discover a shelter or resource cache.';
+        consequences.push('The darkness concealed something valuable.');
+        metricsChange.morale = 12;
+        equipmentChanges.added = [{ name: 'Emergency supplies', quantity: 1, condition: 'good' as const }];
+      } else if (roll > 0.4) {
+        immediateEffect = 'You carefully explore with the flashlight. Nothing dangerous nearby.';
+        consequences.push('You understand your immediate surroundings better.');
+        metricsChange.morale = 4;
+      } else {
+        immediateEffect = 'The flashlight reveals difficult terrain in all directions.';
+        consequences.push('Your situation is more challenging than you hoped.');
+        metricsChange.morale = -5;
+      }
+      if (flashlightScout && flashlightScout.condition !== 'good' && roll < 0.3) {
+        equipmentChanges.updated = [{
+          ...flashlightScout,
+          condition: 'damaged' as const
+        }];
+        consequences.push('The flashlight batteries are running low.');
+      }
+      break;
+
+    case 'use-flashlight-signal':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        morale: 4
+      };
+      if (roll > 0.7 && (state.scenario.timeOfDay === 'night' || state.scenario.timeOfDay === 'dusk')) {
+        immediateEffect = 'You signal SOS with the flashlight. A light blinks back in response!';
+        consequences.push('Someone saw your signal.');
+        metricsChange.morale = 18;
+        metricsChange.cumulativeRisk = -10;
+      } else {
+        immediateEffect = 'You flash SOS patterns with the flashlight repeatedly.';
+        consequences.push('In darkness, the signal could be visible from far away.');
+        metricsChange.cumulativeRisk = -3;
+      }
+      break;
+
+    case 'use-blanket':
+      const blanketItem = state.equipment.find(e => e.name.toLowerCase().includes('blanket'));
+      metricsChange = {
+        energy: -actualEnergyCost,
+        bodyTemperature: 0.8,
+        morale: 10,
+        shelter: 20,
+        cumulativeRisk: -6
+      };
+      immediateEffect = 'You wrap yourself in the emergency blanket. Heat retention improves dramatically.';
+      consequences.push('Your body temperature stabilizes.');
+      consequences.push('The reflective blanket provides crucial insulation.');
+      if (blanketItem && roll < 0.3) {
+        equipmentChanges.updated = [{
+          ...blanketItem,
+          condition: 'worn' as const
+        }];
+        consequences.push('The blanket is showing wear from use.');
+      }
+      break;
+
+    case 'gather-start-fire':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -6,
+        cumulativeRisk: 5
+      };
+      if (roll > 0.6) {
+        immediateEffect = 'You gather dry materials and successfully start a fire.';
+        consequences.push('Warmth and safety from the flames.');
+        metricsChange.bodyTemperature = 1.0;
+        metricsChange.morale = 15;
+        metricsChange.cumulativeRisk = -10;
+      } else if (roll > 0.3) {
+        immediateEffect = 'You gather materials but they are too damp to ignite well.';
+        consequences.push('You get a small fire going but it struggles.');
+        metricsChange.bodyTemperature = 0.3;
+        metricsChange.morale = 4;
+      } else {
+        immediateEffect = 'You cannot find suitable dry tinder. The fire will not catch.';
+        consequences.push('Your effort was wasted.');
+        metricsChange.morale = -8;
+      }
+      break;
+
+    case 'use-knife-shelter':
+      metricsChange = {
+        energy: -decision.energyCost,
+        bodyTemperature: 0.4,
+        morale: 8,
+        shelter: 35,
+        cumulativeRisk: -5
+      };
+      immediateEffect = 'You use the knife to cut branches and improve your shelter structure.';
+      consequences.push('Your protection from the elements increases significantly.');
+      consequences.push('The knife makes construction much more efficient.');
+      break;
+
+    case 'use-rope-descend':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -8,
+        cumulativeRisk: -3
+      };
+      if (roll > 0.7) {
+        immediateEffect = 'Using the rope, you safely descend the steep section.';
+        consequences.push('The rope made a dangerous passage manageable.');
+        metricsChange.morale = 12;
+        metricsChange.cumulativeRisk = -8;
+      } else if (roll > 0.4) {
+        immediateEffect = 'You descend carefully with the rope as an anchor.';
+        consequences.push('Progress is slow but safe.');
+        metricsChange.morale = 4;
+      } else {
+        immediateEffect = 'The rope slips on loose rock. You catch yourself but it was close.';
+        consequences.push('That was dangerous. You are shaken.');
+        metricsChange.morale = -6;
+        metricsChange.injurySeverity = 8;
+      }
+      break;
+
+    default:
+      immediateEffect = 'You take action.';
+  }
+
+  const envEffects = applyEnvironmentalEffects(state.metrics, state.scenario, state.turnNumber);
+  const combinedChanges = {
+    energy: (metricsChange.energy || 0) + (envEffects.energy || 0),
+    bodyTemperature: (metricsChange.bodyTemperature || 0) + (envEffects.bodyTemperature || 0),
+    hydration: (metricsChange.hydration || 0) + (envEffects.hydration || 0),
+    injurySeverity: (metricsChange.injurySeverity || 0),
+    morale: (metricsChange.morale || 0) + (envEffects.morale || 0),
+    cumulativeRisk: (metricsChange.cumulativeRisk || 0) + (envEffects.cumulativeRisk || 0)
+  };
+
+  const allConsequences = [...consequences, ...guidanceFeedback];
+
+  const outcome: DecisionOutcome = {
+    decision,
+    consequences: allConsequences,
+    metricsChange: combinedChanges,
+    immediateEffect,
+    delayedEffects
+  };
+
+  if (equipmentChanges.added || equipmentChanges.removed || equipmentChanges.updated) {
+    outcome.equipmentChanges = equipmentChanges;
+  }
+
+  if (environmentChange) {
+    outcome.environmentChange = environmentChange;
+  }
+
+  const signalingActions = ['use-whistle', 'use-mirror', 'use-flashlight-signal', 'signal', 'signal-water', 'signal-urban'];
+  if (signalingActions.includes(decision.id)) {
+    outcome.wasSignalAttempt = true;
+    if (roll > 0.6 || (state.metrics.signalEffectiveness > 60 && roll > 0.4)) {
+      outcome.wasSuccessfulSignal = true;
+    }
+  }
+
+  const navigationSuccessActions = ['retrace-trail', 'search-trail', 'follow-coast', 'find-exit', 'navigate-camp', 'backtrack-vehicle'];
+  if (navigationSuccessActions.includes(decision.id) && roll > 0.85) {
+    outcome.wasNavigationSuccess = true;
+  }
+
+  const evaluation = evaluateDecisionQuality(decision, state, outcome);
+  outcome.decisionQuality = evaluation.quality;
+  outcome.survivalPrincipleAlignment = evaluation.principle;
+
+  return outcome;
+}

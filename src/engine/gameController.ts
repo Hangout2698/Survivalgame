@@ -1,0 +1,356 @@
+import type { GameState, Decision, DecisionOutcome, TimeOfDay } from '../types/game';
+import { generateScenario } from './scenarioGenerator';
+import { initializeMetrics, updateMetrics, checkEndConditions } from './metricsSystem';
+import { generateDecisions, applyDecision } from './decisionEngine';
+import { analyzeSurvivalPerformance } from './survivalRules';
+import { loadActiveSurvivalGuide } from './survivalGuideService';
+
+function progressTime(currentTime: TimeOfDay, hoursToAdd: number): { newTime: TimeOfDay; totalHours: number } {
+  const timeSequence: TimeOfDay[] = ['dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night'];
+  const hoursPerPeriod: Record<TimeOfDay, number> = {
+    dawn: 2,
+    morning: 4,
+    midday: 3,
+    afternoon: 4,
+    dusk: 2,
+    night: 9
+  };
+
+  let currentIndex = timeSequence.indexOf(currentTime);
+  let remainingHours = hoursToAdd;
+  let totalHours = 0;
+
+  while (remainingHours > 0) {
+    const currentPeriodLength = hoursPerPeriod[timeSequence[currentIndex]];
+    if (remainingHours >= currentPeriodLength) {
+      remainingHours -= currentPeriodLength;
+      totalHours += currentPeriodLength;
+      currentIndex = (currentIndex + 1) % timeSequence.length;
+    } else {
+      totalHours += remainingHours;
+      remainingHours = 0;
+    }
+  }
+
+  return {
+    newTime: timeSequence[currentIndex],
+    totalHours
+  };
+}
+
+function calculateTimeUntilDuskOrDawn(currentTime: TimeOfDay): string {
+  const timeSequence: TimeOfDay[] = ['dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night'];
+  const hoursPerPeriod: Record<TimeOfDay, number> = {
+    dawn: 2,
+    morning: 4,
+    midday: 3,
+    afternoon: 4,
+    dusk: 2,
+    night: 9
+  };
+
+  const currentIndex = timeSequence.indexOf(currentTime);
+  const isDaytime = currentTime === 'dawn' || currentTime === 'morning' || currentTime === 'midday' || currentTime === 'afternoon' || currentTime === 'dusk';
+
+  if (isDaytime) {
+    let hoursUntilNight = 0;
+    for (let i = currentIndex; i < timeSequence.length; i++) {
+      if (timeSequence[i] === 'night') break;
+      hoursUntilNight += hoursPerPeriod[timeSequence[i]];
+    }
+
+    if (hoursUntilNight <= 1) {
+      return 'Less than an hour of daylight remains';
+    } else if (hoursUntilNight <= 2) {
+      return 'Approximately two hours of daylight left';
+    } else if (hoursUntilNight <= 4) {
+      return `Roughly ${Math.floor(hoursUntilNight)} hours of daylight remaining`;
+    } else {
+      return `Perhaps ${Math.floor(hoursUntilNight)} hours until darkness`;
+    }
+  } else {
+    let hoursUntilDawn = hoursPerPeriod['night'];
+    if (hoursUntilDawn <= 2) {
+      return 'Dawn is approaching within the next two hours';
+    } else if (hoursUntilDawn <= 4) {
+      return 'Dawn is still several hours away';
+    } else {
+      return `Approximately ${Math.floor(hoursUntilDawn)} hours until first light`;
+    }
+  }
+}
+
+export async function createNewGame(): Promise<GameState> {
+  const scenario = generateScenario();
+  const metrics = initializeMetrics(scenario);
+  const survivalGuide = await loadActiveSurvivalGuide();
+
+  return {
+    id: crypto.randomUUID(),
+    scenario,
+    metrics,
+    equipment: [...scenario.equipment],
+    turnNumber: 1,
+    currentTimeOfDay: scenario.timeOfDay,
+    hoursElapsed: 0,
+    history: [],
+    status: 'active',
+    currentEnvironment: scenario.environment,
+    survivalGuide,
+    signalAttempts: 0,
+    successfulSignals: 0,
+    goodDecisions: [],
+    poorDecisions: []
+  };
+}
+
+export function makeDecision(state: GameState, decision: Decision): GameState {
+  if (state.status !== 'active') {
+    return state;
+  }
+
+  const outcome = applyDecision(decision, state);
+  const updatedMetrics = updateMetrics(state.metrics, outcome.metricsChange, state.scenario);
+
+  const timeProgression = progressTime(state.currentTimeOfDay, decision.timeRequired);
+
+  let updatedSignalAttempts = state.signalAttempts || 0;
+  let updatedSuccessfulSignals = state.successfulSignals || 0;
+  let updatedGoodDecisions = [...(state.goodDecisions || [])];
+  let updatedPoorDecisions = [...(state.poorDecisions || [])];
+
+  if (outcome.wasSignalAttempt) {
+    updatedSignalAttempts += 1;
+  }
+  if (outcome.wasSuccessfulSignal) {
+    updatedSuccessfulSignals += 1;
+  }
+
+  if (outcome.decisionQuality === 'excellent' || outcome.decisionQuality === 'good') {
+    updatedGoodDecisions.push({
+      turn: state.turnNumber,
+      description: decision.text,
+      principle: outcome.survivalPrincipleAlignment || ''
+    });
+  } else if (outcome.decisionQuality === 'poor' || outcome.decisionQuality === 'critical-error') {
+    updatedPoorDecisions.push({
+      turn: state.turnNumber,
+      description: decision.text,
+      principle: outcome.survivalPrincipleAlignment || ''
+    });
+  }
+
+  let updatedEquipment = [...state.equipment];
+
+  if (outcome.equipmentChanges) {
+    if (outcome.equipmentChanges.removed) {
+      outcome.equipmentChanges.removed.forEach(itemName => {
+        const index = updatedEquipment.findIndex(e => e.name === itemName);
+        if (index !== -1) {
+          updatedEquipment.splice(index, 1);
+        }
+      });
+    }
+
+    if (outcome.equipmentChanges.added) {
+      updatedEquipment = [...updatedEquipment, ...outcome.equipmentChanges.added];
+    }
+
+    if (outcome.equipmentChanges.updated) {
+      outcome.equipmentChanges.updated.forEach(updatedItem => {
+        const index = updatedEquipment.findIndex(e => e.name === updatedItem.name);
+        if (index !== -1) {
+          updatedEquipment[index] = updatedItem;
+        }
+      });
+    }
+  }
+
+  const newState: GameState = {
+    ...state,
+    metrics: updatedMetrics,
+    equipment: updatedEquipment,
+    turnNumber: state.turnNumber + 1,
+    currentTimeOfDay: timeProgression.newTime,
+    hoursElapsed: state.hoursElapsed + timeProgression.totalHours,
+    history: [...state.history, outcome],
+    currentEnvironment: outcome.environmentChange || state.currentEnvironment,
+    survivalGuide: state.survivalGuide,
+    signalAttempts: updatedSignalAttempts,
+    successfulSignals: updatedSuccessfulSignals,
+    goodDecisions: updatedGoodDecisions,
+    poorDecisions: updatedPoorDecisions
+  };
+
+  const endCheck = checkEndConditions(newState);
+
+  if (endCheck.ended) {
+    const analysis = analyzeSurvivalPerformance(newState);
+
+    return {
+      ...newState,
+      status: 'ended',
+      outcome: endCheck.outcome,
+      lessons: [endCheck.reason || '', ...analysis.lessons],
+      keyMoments: identifyKeyMoments(newState)
+    };
+  }
+
+  return newState;
+}
+
+export function getAvailableDecisions(state: GameState): Decision[] {
+  if (state.status !== 'active') {
+    return [];
+  }
+
+  return generateDecisions(state);
+}
+
+function identifyKeyMoments(state: GameState): Array<{
+  turn: number;
+  description: string;
+  impact: 'positive' | 'negative' | 'critical';
+}> {
+  const moments: Array<{
+    turn: number;
+    description: string;
+    impact: 'positive' | 'negative' | 'critical';
+  }> = [];
+
+  state.history.forEach((outcome, index) => {
+    const turn = index + 1;
+    const energyChange = outcome.metricsChange.energy || 0;
+    const riskChange = outcome.metricsChange.cumulativeRisk || 0;
+    const injuryChange = outcome.metricsChange.injurySeverity || 0;
+
+    if (outcome.decision.id === 'panic-move') {
+      moments.push({
+        turn,
+        description: 'You panicked and moved recklessly',
+        impact: 'critical'
+      });
+    } else if (energyChange < -40) {
+      moments.push({
+        turn,
+        description: 'A decision cost far more energy than expected',
+        impact: 'negative'
+      });
+    } else if (riskChange > 15) {
+      moments.push({
+        turn,
+        description: 'You took a high-risk action',
+        impact: 'negative'
+      });
+    } else if (injuryChange > 20) {
+      moments.push({
+        turn,
+        description: 'You sustained a serious injury',
+        impact: 'critical'
+      });
+    } else if (outcome.decision.id === 'shelter' || outcome.decision.id === 'fortify') {
+      if (turn <= 3) {
+        moments.push({
+          turn,
+          description: 'You prioritized shelter early',
+          impact: 'positive'
+        });
+      }
+    }
+  });
+
+  return moments.slice(0, 5);
+}
+
+export function getCurrentSituation(state: GameState): string {
+  const { metrics, scenario, turnNumber, currentTimeOfDay, equipment } = state;
+
+  let situation = '';
+
+  if (turnNumber === 1) {
+    return 'You assess your situation and consider your options.';
+  }
+
+  const timeInfo = calculateTimeUntilDuskOrDawn(currentTimeOfDay);
+  situation += `${timeInfo}. `;
+
+  const hasShelter = metrics.shelterQuality && metrics.shelterQuality > 0;
+  const hasFire = metrics.fireQuality && metrics.fireQuality > 0;
+  const hasSignaling = equipment.some(e => e.name.toLowerCase().includes('signal') || e.name.toLowerCase().includes('mirror'));
+
+  if (hasShelter) {
+    if (metrics.shelterQuality > 60) {
+      situation += 'Your shelter provides solid protection. ';
+    } else if (metrics.shelterQuality > 30) {
+      situation += 'Your shelter offers basic protection. ';
+    } else {
+      situation += 'Your makeshift shelter is minimal. ';
+    }
+  } else {
+    if (currentTimeOfDay === 'dusk' || currentTimeOfDay === 'night') {
+      situation += 'You remain exposed to the elements. ';
+    }
+  }
+
+  if (hasFire) {
+    if (metrics.fireQuality > 60) {
+      situation += 'Your fire burns steadily. ';
+    } else {
+      situation += 'The fire requires attention. ';
+    }
+  }
+
+  if (metrics.energy < 15) {
+    situation += 'You are on the verge of complete exhaustion. Every movement is agony. ';
+  } else if (metrics.energy < 30) {
+    situation += 'You are becoming dangerously exhausted. ';
+  } else if (metrics.energy < 50) {
+    situation += 'Fatigue is setting in. ';
+  }
+
+  if (metrics.hydration < 15) {
+    situation += 'Extreme dehydration is affecting your consciousness. Your tongue is swollen. ';
+  } else if (metrics.hydration < 30) {
+    situation += 'Severe thirst clouds your thinking. ';
+  } else if (metrics.hydration < 50) {
+    situation += 'You are getting thirsty. ';
+  }
+
+  if (metrics.bodyTemperature < 33) {
+    situation += 'Severe hypothermia. Your body is shutting down. ';
+  } else if (metrics.bodyTemperature < 35) {
+    situation += 'You are shivering uncontrollably. ';
+  } else if (metrics.bodyTemperature > 40) {
+    situation += 'Dangerous hyperthermia. Your vision swims. ';
+  } else if (metrics.bodyTemperature > 39) {
+    situation += 'You feel feverish and disoriented. ';
+  } else if (metrics.bodyTemperature < 36) {
+    situation += 'The cold is affecting you. ';
+  }
+
+  if (metrics.injurySeverity > 70) {
+    situation += 'Your injuries are life-threatening. ';
+  } else if (metrics.injurySeverity > 50) {
+    situation += 'Your injuries are severe. ';
+  } else if (metrics.injurySeverity > 25) {
+    situation += 'Pain from your injuries persists. ';
+  }
+
+  if (metrics.morale < 30) {
+    situation += 'Despair is taking hold. ';
+  } else if (metrics.morale < 50) {
+    situation += 'Your spirits are low. ';
+  }
+
+  if (scenario.weather === 'storm') {
+    situation += 'The storm continues to rage. ';
+  } else if (scenario.weather === 'snow') {
+    situation += 'Snow falls steadily. ';
+  }
+
+  if (situation === timeInfo + '. ') {
+    situation += 'You maintain awareness of your surroundings and remain alert. ';
+  }
+
+  return situation;
+}

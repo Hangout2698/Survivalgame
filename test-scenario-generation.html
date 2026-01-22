@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Scenario Generation</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        button:hover {
+            background: #059669;
+        }
+        button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+        #status {
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+        .loading {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 16px;
+            background: #f9fafb;
+            border-radius: 6px;
+            border: 1px solid #e5e7eb;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Test Scenario Generation</h1>
+        <p>This will test the OpenAI integration with your edge function.</p>
+        <button id="testBtn" onclick="testScenarioGeneration()">Test Scenario Generation</button>
+        <div id="status"></div>
+        <div id="result"></div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://yqnvucflrmluvlchlnra.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxbnZ1Y2Zscm1sdXZsY2hsbnJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgwNDE3NDIsImV4cCI6MjA4MzYxNzc0Mn0.WjfmqgV_o4tKbjrDmce8wOQPuG4JRih3vFwzWwIGSE0';
+
+        async function testScenarioGeneration() {
+            const statusEl = document.getElementById('status');
+            const resultEl = document.getElementById('result');
+            const btn = document.getElementById('testBtn');
+
+            btn.disabled = true;
+            statusEl.className = 'loading';
+            statusEl.textContent = 'Testing... This may take 10-15 seconds.';
+            resultEl.textContent = '';
+
+            try {
+                const response = await fetch(`${SUPABASE_URL}/functions/v1/generate-scenario`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        currentDay: 1,
+                        currentMetrics: {
+                            health: 100,
+                            hunger: 80,
+                            thirst: 70,
+                            energy: 90,
+                            morale: 85,
+                            warmth: 75
+                        },
+                        previousDecisions: []
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || `HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                statusEl.className = 'success';
+                statusEl.textContent = '✓ Success! AI scenario generation is working.';
+                resultEl.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                statusEl.className = 'error';
+                statusEl.textContent = `✗ Error: ${error.message}`;
+                resultEl.textContent = error.stack || error.toString();
+            } finally {
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
