@@ -4,12 +4,14 @@ import { createNewGame, makeDecision, getAvailableDecisions } from '../engine/ga
 import { generateBriefing, generateConciseBrief } from '../engine/briefingGenerator';
 import { getEnvironmentTips } from '../engine/survivalPrinciplesService';
 import { useInventory } from '../contexts/InventoryContext';
+import { getTriggeredTutorialScenario } from '../data/tutorialScenarios';
 import { MetricsDisplay } from './MetricsDisplay';
 import { StatusHUD, type PlayerStats } from './StatusHUD';
 import { DangerVignette } from './DangerVignette';
 import { ActionHistory } from './ActionHistory';
 import { LoadoutScreen } from './LoadoutScreen';
 import { InventoryTray } from './InventoryTray';
+import { TutorialScenarioModal } from './TutorialScenarioModal';
 import { DecisionList } from './DecisionList';
 import { GameOutcome } from './GameOutcome';
 import { EnvironmentBackground } from './EnvironmentBackground';
@@ -25,6 +27,8 @@ export function Game() {
   const [recentOutcome, setRecentOutcome] = useState<string>('');
   const [showOutcome, setShowOutcome] = useState(false);
   const [lastDecisionId, setLastDecisionId] = useState<string>('');
+  const [currentTutorialScenario, setCurrentTutorialScenario] = useState<any>(null);
+  const [completedTutorials, setCompletedTutorials] = useState<Set<string>>(new Set());
   const [notification, setNotification] = useState<{
     message: string;
     type: 'success' | 'warning' | 'info' | 'danger';
@@ -71,10 +75,17 @@ export function Game() {
   }, [loadoutComplete, gameState]);
   useEffect(() => {
     if (gameState && gameState.status === 'active') {
+      // Check for tutorial scenario triggers
+      const tutorialScenario = getTriggeredTutorialScenario(gameState);
+      if (tutorialScenario && !completedTutorials.has(tutorialScenario.id)) {
+        setCurrentTutorialScenario(tutorialScenario);
+        return; // Don't load regular decisions while tutorial is active
+      }
+
       const newDecisions = getAvailableDecisions(gameState);
       setDecisions(newDecisions);
     }
-  }, [gameState]);
+  }, [gameState, completedTutorials]);
 
   const handleDecision = (decision: Decision) => {
     if (!gameState) return;
@@ -118,6 +129,66 @@ export function Game() {
 
   const handleLoadoutComplete = () => {
     setLoadoutComplete(true);
+  };
+
+  const handleTutorialChoice = (choiceId: string) => {
+    if (!currentTutorialScenario || !gameState) return;
+
+    const choice = currentTutorialScenario.choices.find((c: any) => c.id === choiceId);
+    if (!choice) return;
+
+    // Apply tutorial scenario outcome to game state
+    const updatedMetrics = { ...gameState.metrics };
+    Object.entries(choice.outcome.metricsChange).forEach(([key, value]) => {
+      if (key in updatedMetrics && typeof value === 'number') {
+        (updatedMetrics as any)[key] = Math.max(0, Math.min(100, (updatedMetrics as any)[key] + value));
+      }
+    });
+
+    // Update game state with tutorial outcome
+    const updatedState: GameState = {
+      ...gameState,
+      metrics: updatedMetrics,
+      turnNumber: gameState.turnNumber + 1,
+      history: [
+        ...gameState.history,
+        {
+          decision: {
+            id: choiceId,
+            text: choice.text,
+            energyCost: 0,
+            riskLevel: 0,
+            timeRequired: 1
+          },
+          consequences: [choice.outcome.principle],
+          metricsChange: choice.outcome.metricsChange,
+          immediateEffect: choice.outcome.immediate,
+          decisionQuality: choice.outcome.quality,
+          survivalPrincipleAlignment: choice.outcome.educationalFeedback
+        }
+      ]
+    };
+
+    setGameState(updatedState);
+    setCompletedTutorials(prev => new Set([...prev, currentTutorialScenario.id]));
+    setCurrentTutorialScenario(null);
+
+    // Show notification based on quality
+    const notificationType =
+      choice.outcome.quality === 'excellent' ? 'success' :
+      choice.outcome.quality === 'poor' || choice.outcome.quality === 'critical-error' ? 'danger' :
+      'info';
+
+    setNotification({
+      message: choice.outcome.principle,
+      type: notificationType
+    });
+  };
+
+  const handleDismissTutorial = () => {
+    if (!currentTutorialScenario) return;
+    setCompletedTutorials(prev => new Set([...prev, currentTutorialScenario.id]));
+    setCurrentTutorialScenario(null);
   };
 
   // Show loadout screen first
@@ -170,6 +241,15 @@ export function Game() {
 
       {/* Inventory Tray - Shows equipped items */}
       <InventoryTray />
+
+      {/* Tutorial Scenario Modal */}
+      {currentTutorialScenario && (
+        <TutorialScenarioModal
+          scenario={currentTutorialScenario}
+          onChoice={handleTutorialChoice}
+          onDismiss={handleDismissTutorial}
+        />
+      )}
 
       {notification && (
         <Notification
