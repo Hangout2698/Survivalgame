@@ -100,6 +100,8 @@ export interface GameState {
   successfulSignals?: number;
   goodDecisions?: Array<{ turn: number; description: string; principle: string }>;
   poorDecisions?: Array<{ turn: number; description: string; principle: string }>;
+  principleAlignmentScore?: number; // 0-100, tracks learning
+  discoveredPrinciples?: Set<string>; // Unlocked principles
 }
 
 export interface SurvivalRule {

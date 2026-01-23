@@ -13,6 +13,8 @@ export function AdminPanel() {
   }, []);
 
   const fetchCurrentDocument = async () => {
+    if (!supabase) return;
+
     try {
       const { data, error } = await supabase
         .from('game_settings')
@@ -32,6 +34,12 @@ export function AdminPanel() {
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    if (!supabase) {
+      setStatus('error');
+      setMessage('Supabase not configured. Please set environment variables.');
+      return;
+    }
 
     if (file.type !== 'application/pdf') {
       setStatus('error');

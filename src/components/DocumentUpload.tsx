@@ -15,6 +15,12 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    if (!supabase) {
+      setStatus('error');
+      setMessage('Supabase not configured. Please set environment variables.');
+      return;
+    }
+
     if (file.type !== 'application/pdf') {
       setStatus('error');
       setMessage('Please upload a PDF file');
@@ -30,7 +36,7 @@ export function DocumentUpload({ onUploadSuccess }: DocumentUploadProps) {
       const fileName = `survival-guide-${Date.now()}.${fileExt}`;
       const filePath = `documents/${fileName}`;
 
-      const { error: uploadError, data } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('game-documents')
         .upload(filePath, file);
 

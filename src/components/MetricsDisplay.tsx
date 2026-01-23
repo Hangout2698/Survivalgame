@@ -1,6 +1,9 @@
-import type { PlayerMetrics, Equipment, Scenario, TimeOfDay } from '../types/game';
+import { useState, useEffect } from 'react';
+import type { PlayerMetrics, Equipment, Scenario, TimeOfDay, GameState } from '../types/game';
 import { Package, Clock } from 'lucide-react';
 import { calculateWindEffect, getWindDescription } from '../engine/windSystem';
+import { getEnvironmentTips } from '../engine/survivalPrinciplesService';
+import { getPersonalizedTip } from '../engine/principleRecommendationEngine';
 
 interface MetricsDisplayProps {
   metrics: PlayerMetrics;
@@ -9,9 +12,29 @@ interface MetricsDisplayProps {
   showProbability?: boolean;
   currentTimeOfDay?: TimeOfDay;
   hoursElapsed?: number;
+  turnNumber?: number;
+  gameState?: GameState;
 }
 
-export function MetricsDisplay({ metrics, equipment, scenario, showProbability = false, currentTimeOfDay, hoursElapsed }: MetricsDisplayProps) {
+export function MetricsDisplay({ metrics, equipment, scenario, showProbability = false, currentTimeOfDay, hoursElapsed, turnNumber = 1, gameState }: MetricsDisplayProps) {
+  const [currentTip, setCurrentTip] = useState<string>('');
+  const [personalizedTip, setPersonalizedTip] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (scenario) {
+      const tips = getEnvironmentTips(scenario.environment);
+      // Rotate tip every 3 turns
+      const tipIndex = Math.floor(turnNumber / 3) % tips.length;
+      setCurrentTip(tips[tipIndex] || '');
+    }
+  }, [scenario?.environment, turnNumber]);
+
+  useEffect(() => {
+    if (gameState && turnNumber >= 5) {
+      setPersonalizedTip(getPersonalizedTip(gameState));
+    }
+  }, [turnNumber, gameState]);
+
   return (
     <div className="space-y-3">
       {currentTimeOfDay && (
@@ -155,6 +178,41 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
               </div>
             ))}
           </div>
+          {currentTip && (
+            <div className="pt-3 border-t border-gray-700 mt-3">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xl">💡</span>
+                <span className="text-sm text-gray-400 font-medium">Survival Tip</span>
+              </div>
+              <p className="text-xs text-gray-300 leading-relaxed italic">
+                {currentTip}
+              </p>
+            </div>
+          )}
+          {personalizedTip && (
+            <div className="pt-3 border-t border-orange-800/50 mt-3">
+              <div className="text-xs text-orange-300 leading-relaxed">
+                {personalizedTip}
+              </div>
+            </div>
+          )}
+          {gameState?.discoveredPrinciples && gameState.discoveredPrinciples.size > 0 && (
+            <div className="pt-3 border-t border-gray-700 mt-3">
+              <div className="text-sm text-gray-400 mb-1">Knowledge Progress</div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">Principles Discovered:</span>
+                <span className="text-sm font-mono text-green-400">
+                  {gameState.discoveredPrinciples.size} / 90
+                </span>
+              </div>
+              <div className="w-full h-1.5 bg-gray-700 rounded-full mt-2 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-500 to-green-500 transition-all duration-500"
+                  style={{ width: `${(gameState.discoveredPrinciples.size / 90) * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
 

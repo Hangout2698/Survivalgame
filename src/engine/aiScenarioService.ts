@@ -27,6 +27,10 @@ export interface AIScenarioData {
 }
 
 export async function generateAIScenario(gameState: GameState): Promise<AIScenarioData> {
+  if (!supabase) {
+    throw new Error('Supabase not configured');
+  }
+
   const { data: { session } } = await supabase.auth.getSession();
 
   if (!session) {

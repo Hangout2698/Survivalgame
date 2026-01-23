@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev:*)",
+      "Bash(timeout:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nFix game balance to enable win conditions through survival principles\n\nIncreased navigation success rate from 15% to 30% and reduced energy drain\nby ~30% to make wins achievable while still punishing poor decisions.\n\nChanges:\n- Increased navigation success probability \\(decisionEngine.ts\\)\n- Reduced passive energy drain across all weather conditions \\(metricsSystem.ts\\)\n- Increased rest energy recovery from +20 to +25 \\(decisionEngine.ts\\)\n- Relaxed signal rescue requirements for 2-3 signal wins \\(metricsSystem.ts\\)\n- Added graceful Supabase degradation \\(supabase.ts, survivalGuideService.ts\\)\n\nTesting verified three outcomes:\n- WIN via navigation \\(8 turns, following shelter + energy management\\)\n- DEATH from exhaustion \\(9 turns, inadequate rest despite good shelter\\)\n- WIN via endurance \\(14 turns, perfect survival principles execution\\)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(npm run build:*)",
+      "Bash(git commit:*)",
+      "Bash(npm audit:*)",
+      "Bash(node --version:*)",
+      "Bash(npm --version)",
+      "Bash(npx update-browserslist-db@latest)"
+    ]
+  }
+}

@@ -5,6 +5,8 @@ import { generateBriefing, generateConciseBrief } from '../engine/briefingGenera
 import { getEnvironmentTips } from '../engine/survivalPrinciplesService';
 import { MetricsDisplay } from './MetricsDisplay';
 import { StatusHUD, type PlayerStats } from './StatusHUD';
+import { DangerVignette } from './DangerVignette';
+import { ActionHistory } from './ActionHistory';
 import { DecisionList } from './DecisionList';
 import { GameOutcome } from './GameOutcome';
 import { EnvironmentBackground } from './EnvironmentBackground';
@@ -135,11 +137,17 @@ export function Game() {
     <div className="min-h-screen bg-gray-950 text-gray-100 relative">
       <EnvironmentBackground environment={gameState.currentEnvironment} />
 
+      {/* Danger Vignette - Visual warning effect */}
+      <DangerVignette stats={getPlayerStats(gameState)} />
+
       {/* Status HUD - Fixed at top */}
       <StatusHUD
         stats={getPlayerStats(gameState)}
         onGameOver={handleGameOverFromHUD}
       />
+
+      {/* Action History Log - Fixed at bottom */}
+      <ActionHistory history={gameState.history} maxVisible={5} />
 
       {notification && (
         <Notification

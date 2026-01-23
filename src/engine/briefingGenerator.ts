@@ -199,7 +199,6 @@ function getBackstory(environment: Environment, temperature: number, weather: We
 
 function shortenBackstory(text: string, currentWeather: Weather): string {
   const isWeatherGood = currentWeather === 'clear';
-  const isSevereWeather = currentWeather === 'storm' || currentWeather === 'snow' || currentWeather === 'rain';
 
   const shortened: Record<string, string> = {
     'You were descending from a day hike when you took a wrong turn in deteriorating visibility. The trail vanished an hour ago.':
@@ -469,7 +468,7 @@ function getImmediateHazards(scenario: Scenario, backstory: Backstory): string[]
   return hazards.slice(0, 3);
 }
 
-function getRescueSituation(scenario: Scenario, environment: Environment): {
+function getRescueSituation(environment: Environment): {
   known: string;
   unclear: string;
 } {
@@ -503,7 +502,7 @@ function getRescueSituation(scenario: Scenario, environment: Environment): {
   return rescueScenarios[environment];
 }
 
-function getStayVsGoAnalysis(environment: Environment, timeOfDay: TimeOfDay): {
+function getStayVsGoAnalysis(environment: Environment): {
   travelDistance: string;
   travelTerrain: string;
 } {
@@ -537,7 +536,7 @@ function getStayVsGoAnalysis(environment: Environment, timeOfDay: TimeOfDay): {
   return analyses[environment];
 }
 
-function getInformationGaps(environment: Environment, weather: Weather): string {
+function getInformationGaps(): string {
   const gaps = [
     "Weather trajectory uncertain.",
     "Energy reserves unknown.",
@@ -556,9 +555,9 @@ export function generateBriefing(scenario: Scenario): string {
   const location = getLocationAndTerrain(scenario.environment);
   const equipment = getEquipmentSummary(scenario, backstory);
   const hazards = getImmediateHazards(scenario, backstory);
-  const rescue = getRescueSituation(scenario, scenario.environment);
-  const stayVsGo = getStayVsGoAnalysis(scenario.environment, scenario.timeOfDay);
-  const gaps = getInformationGaps(scenario.environment, scenario.weather);
+  const rescue = getRescueSituation(scenario.environment);
+  const stayVsGo = getStayVsGoAnalysis(scenario.environment);
+  const gaps = getInformationGaps();
 
   const sections = [
     '🔹 SURVIVAL SITUATION BRIEF',
@@ -627,19 +626,18 @@ export function generateConciseBrief(
   scenario: Scenario,
   metrics: any,
   currentTimeOfDay: TimeOfDay,
-  equipment: any[],
   lastOutcome?: {
     decision: any;
     immediateEffect: string;
-    decisionQuality: string;
+    decisionQuality?: string;
     survivalPrincipleAlignment?: string;
   }
 ): string {
   const timeAndLight = getTimeAndLight(currentTimeOfDay);
   const weather = getWeatherDescription(scenario.weather, scenario.environment, scenario.temperature);
   const location = getLocationAndTerrain(scenario.environment);
-  const rescue = getRescueSituation(scenario, scenario.environment);
-  const stayVsGo = getStayVsGoAnalysis(scenario.environment, currentTimeOfDay);
+  const rescue = getRescueSituation(scenario.environment);
+  const stayVsGo = getStayVsGoAnalysis(scenario.environment);
 
   const sections = ['🔹 SITUATION BRIEF', ''];
 
