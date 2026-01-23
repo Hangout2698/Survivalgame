@@ -3,10 +3,13 @@ import type { GameState, Decision } from '../types/game';
 import { createNewGame, makeDecision, getAvailableDecisions } from '../engine/gameController';
 import { generateBriefing, generateConciseBrief } from '../engine/briefingGenerator';
 import { getEnvironmentTips } from '../engine/survivalPrinciplesService';
+import { useInventory } from '../contexts/InventoryContext';
 import { MetricsDisplay } from './MetricsDisplay';
 import { StatusHUD, type PlayerStats } from './StatusHUD';
 import { DangerVignette } from './DangerVignette';
 import { ActionHistory } from './ActionHistory';
+import { LoadoutScreen } from './LoadoutScreen';
+import { InventoryTray } from './InventoryTray';
 import { DecisionList } from './DecisionList';
 import { GameOutcome } from './GameOutcome';
 import { EnvironmentBackground } from './EnvironmentBackground';
@@ -15,6 +18,8 @@ import { Notification } from './Notification';
 import { CloudSnow } from 'lucide-react';
 
 export function Game() {
+  const { resetInventory } = useInventory();
+  const [loadoutComplete, setLoadoutComplete] = useState(false);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [recentOutcome, setRecentOutcome] = useState<string>('');
@@ -59,8 +64,11 @@ export function Game() {
   };
 
   useEffect(() => {
-    createNewGame().then(setGameState);
-  }, []);
+    // Only create game after loadout is complete
+    if (loadoutComplete && !gameState) {
+      createNewGame().then(setGameState);
+    }
+  }, [loadoutComplete, gameState]);
   useEffect(() => {
     if (gameState && gameState.status === 'active') {
       const newDecisions = getAvailableDecisions(gameState);
@@ -103,16 +111,27 @@ export function Game() {
     setShowOutcome(false);
     setLastDecisionId('');
     setNotification(null);
-    const newGame = await createNewGame();
-    setGameState(newGame);
+    setGameState(null);
+    setLoadoutComplete(false);
+    resetInventory();
   };
 
+  const handleLoadoutComplete = () => {
+    setLoadoutComplete(true);
+  };
+
+  // Show loadout screen first
+  if (!loadoutComplete) {
+    return <LoadoutScreen onComplete={handleLoadoutComplete} />;
+  }
+
+  // Loading state while game initializes
   if (!gameState) {
     return (
       <div className="min-h-screen bg-gray-950 text-gray-100 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-400 mx-auto mb-4"></div>
-          <p className="text-gray-400">Loading survival scenario...</p>
+          <p className="text-gray-400">Generating survival scenario...</p>
         </div>
       </div>
     );
@@ -148,6 +167,9 @@ export function Game() {
 
       {/* Action History Log - Fixed at bottom */}
       <ActionHistory history={gameState.history} maxVisible={5} />
+
+      {/* Inventory Tray - Shows equipped items */}
+      <InventoryTray />
 
       {notification && (
         <Notification
