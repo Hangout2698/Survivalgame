@@ -99,7 +99,7 @@ export function updateMetrics(
 export function applyEnvironmentalEffects(
   metrics: PlayerMetrics,
   scenario: Scenario,
-  turnNumber: number
+  _turnNumber: number
 ): Partial<PlayerMetrics> {
   const changes: Partial<PlayerMetrics> = {
     energy: 0,
@@ -233,7 +233,6 @@ export function checkEndConditions(state: GameState): {
   reason?: string;
 } {
   const m = state.metrics;
-  const signalAttempts = state.signalAttempts || 0;
   const successfulSignals = state.successfulSignals || 0;
 
   if (m.bodyTemperature <= 31.5 || m.bodyTemperature >= 41.5) {

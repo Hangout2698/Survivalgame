@@ -128,7 +128,7 @@ export function analyzeSurvivalPerformance(state: GameState): {
     lessons.push('Desperation leads to poor decisions');
   }
 
-  const avgEnergy = state.history.reduce((sum, h, i) =>
+  const avgEnergy = state.history.reduce((sum, _h, i) =>
     sum + (state.history[i].metricsChange.energy || 0), 0
   ) / Math.max(state.history.length, 1);
 

@@ -1,4 +1,4 @@
-import type { GameState, Decision, DecisionOutcome, TimeOfDay } from '../types/game';
+import type { GameState, Decision, TimeOfDay, PlayerMetrics } from '../types/game';
 import { generateScenario } from './scenarioGenerator';
 import { initializeMetrics, updateMetrics, checkEndConditions } from './metricsSystem';
 import { generateDecisions, applyDecision } from './decisionEngine';
@@ -110,7 +110,41 @@ export function makeDecision(state: GameState, decision: Decision): GameState {
   }
 
   const outcome = applyDecision(decision, state);
-  const updatedMetrics = updateMetrics(state.metrics, outcome.metricsChange, state.scenario);
+
+  // Apply any delayed effects that should trigger this turn
+  let delayedMetricsChange: Partial<PlayerMetrics> = {};
+  state.history.forEach(pastOutcome => {
+    if (pastOutcome.delayedEffects) {
+      pastOutcome.delayedEffects.forEach(delayedEffect => {
+        if (delayedEffect.turn === state.turnNumber) {
+          // Merge delayed effect changes
+          const metricsKeys = Object.keys(delayedEffect.metricsChange) as Array<keyof PlayerMetrics>;
+          metricsKeys.forEach(metricKey => {
+            const currentValue = delayedMetricsChange[metricKey] as number | undefined;
+            const changeValue = delayedEffect.metricsChange[metricKey] as number | undefined;
+            delayedMetricsChange[metricKey] = ((currentValue || 0) + (changeValue || 0)) as any;
+          });
+          // Add delayed effect description to consequences
+          if (delayedEffect.effect) {
+            outcome.consequences.push(delayedEffect.effect);
+          }
+        }
+      });
+    }
+  });
+
+  // Combine outcome changes with delayed effects
+  const combinedMetricsChange = {
+    energy: (outcome.metricsChange.energy || 0) + (delayedMetricsChange.energy || 0),
+    bodyTemperature: (outcome.metricsChange.bodyTemperature || 0) + (delayedMetricsChange.bodyTemperature || 0),
+    hydration: (outcome.metricsChange.hydration || 0) + (delayedMetricsChange.hydration || 0),
+    injurySeverity: (outcome.metricsChange.injurySeverity || 0) + (delayedMetricsChange.injurySeverity || 0),
+    morale: (outcome.metricsChange.morale || 0) + (delayedMetricsChange.morale || 0),
+    shelter: (outcome.metricsChange.shelter || 0) + (delayedMetricsChange.shelter || 0),
+    cumulativeRisk: (outcome.metricsChange.cumulativeRisk || 0) + (delayedMetricsChange.cumulativeRisk || 0)
+  };
+
+  const updatedMetrics = updateMetrics(state.metrics, combinedMetricsChange, state.scenario);
 
   const timeProgression = progressTime(state.currentTimeOfDay, decision.timeRequired);
 
@@ -138,6 +172,38 @@ export function makeDecision(state: GameState, decision: Decision): GameState {
       description: decision.text,
       principle: outcome.survivalPrincipleAlignment || ''
     });
+  }
+
+  // Update principle alignment score
+  let updatedAlignmentScore = state.principleAlignmentScore ?? 50; // Start at neutral
+  const qualityDelta: Record<string, number> = {
+    'excellent': 8,
+    'good': 3,
+    'poor': -5,
+    'critical-error': -12
+  };
+  if (outcome.decisionQuality) {
+    updatedAlignmentScore = Math.max(0, Math.min(100,
+      updatedAlignmentScore + (qualityDelta[outcome.decisionQuality] || 0)
+    ));
+  }
+
+  // Initialize discovered principles set
+  let updatedDiscoveredPrinciples = state.discoveredPrinciples || new Set<string>();
+
+  // Track principle discovery on good/excellent decisions
+  if ((outcome.decisionQuality === 'excellent' || outcome.decisionQuality === 'good')
+      && outcome.survivalPrincipleAlignment) {
+    const principle = outcome.survivalPrincipleAlignment;
+
+    if (!updatedDiscoveredPrinciples.has(principle)) {
+      updatedDiscoveredPrinciples = new Set(updatedDiscoveredPrinciples);
+      updatedDiscoveredPrinciples.add(principle);
+
+      // Show unlock notification
+      const principleTitle = principle.split(':')[0] || principle.substring(0, 30);
+      outcome.consequences.push(`🎓 New principle discovered: ${principleTitle}`);
+    }
   }
 
   let updatedEquipment = [...state.equipment];
@@ -179,7 +245,9 @@ export function makeDecision(state: GameState, decision: Decision): GameState {
     signalAttempts: updatedSignalAttempts,
     successfulSignals: updatedSuccessfulSignals,
     goodDecisions: updatedGoodDecisions,
-    poorDecisions: updatedPoorDecisions
+    poorDecisions: updatedPoorDecisions,
+    principleAlignmentScore: updatedAlignmentScore,
+    discoveredPrinciples: updatedDiscoveredPrinciples
   };
 
   const endCheck = checkEndConditions(newState);
@@ -263,7 +331,7 @@ function identifyKeyMoments(state: GameState): Array<{
 }
 
 export function getCurrentSituation(state: GameState): string {
-  const { metrics, scenario, turnNumber, currentTimeOfDay, equipment } = state;
+  const { metrics, scenario, turnNumber, currentTimeOfDay } = state;
 
   let situation = '';
 
@@ -274,14 +342,12 @@ export function getCurrentSituation(state: GameState): string {
   const timeInfo = calculateTimeUntilDuskOrDawn(currentTimeOfDay);
   situation += `${timeInfo}. `;
 
-  const hasShelter = metrics.shelterQuality && metrics.shelterQuality > 0;
-  const hasFire = metrics.fireQuality && metrics.fireQuality > 0;
-  const hasSignaling = equipment.some(e => e.name.toLowerCase().includes('signal') || e.name.toLowerCase().includes('mirror'));
+  const hasShelter = metrics.shelter && metrics.shelter > 0;
 
   if (hasShelter) {
-    if (metrics.shelterQuality > 60) {
+    if (metrics.shelter > 60) {
       situation += 'Your shelter provides solid protection. ';
-    } else if (metrics.shelterQuality > 30) {
+    } else if (metrics.shelter > 30) {
       situation += 'Your shelter offers basic protection. ';
     } else {
       situation += 'Your makeshift shelter is minimal. ';
@@ -289,14 +355,6 @@ export function getCurrentSituation(state: GameState): string {
   } else {
     if (currentTimeOfDay === 'dusk' || currentTimeOfDay === 'night') {
       situation += 'You remain exposed to the elements. ';
-    }
-  }
-
-  if (hasFire) {
-    if (metrics.fireQuality > 60) {
-      situation += 'Your fire burns steadily. ';
-    } else {
-      situation += 'The fire requires attention. ';
     }
   }
 

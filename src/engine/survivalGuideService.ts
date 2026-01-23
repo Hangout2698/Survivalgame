@@ -34,13 +34,11 @@ export async function loadActiveSurvivalGuide(): Promise<SurvivalGuideContent | 
 export function extractRelevantGuidance(
   guideContent: SurvivalGuideContent | null,
   state: GameState,
-  context: 'decision' | 'outcome'
+  _context: 'decision' | 'outcome'
 ): string {
   if (!guideContent || !guideContent.rawText) {
     return '';
   }
-
-  const text = guideContent.rawText.toLowerCase();
   const { scenario, metrics } = state;
 
   const keywords: string[] = [];

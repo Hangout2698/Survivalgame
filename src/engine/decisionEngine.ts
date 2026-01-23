@@ -1,9 +1,8 @@
 import type { Decision, GameState, DecisionOutcome } from '../types/game';
-import { updateMetrics, applyEnvironmentalEffects } from './metricsSystem';
+import { applyEnvironmentalEffects } from './metricsSystem';
 import { extractRelevantGuidance, generateGuidanceBasedFeedback } from './survivalGuideService';
 import {
   getEducationalFeedback,
-  getPrinciplesForDecision,
   searchPrinciples
 } from './survivalPrinciplesService';
 
@@ -46,7 +45,7 @@ function scaleEnergyCost(baseCost: number, riskLevel: number, state: GameState):
 function determineQuality(
   decision: Decision,
   state: GameState,
-  outcome: DecisionOutcome
+  _outcome: DecisionOutcome
 ): 'excellent' | 'good' | 'poor' | 'critical-error' {
   const { metrics, scenario, turnNumber } = state;
 
@@ -447,7 +446,6 @@ function getEquipmentBasedDecisions(state: GameState): Decision[] {
     const hasFirstAid = equipment.some(e => e.name.toLowerCase().includes('first aid'));
     const hasBandages = equipment.some(e => e.name.toLowerCase().includes('bandage'));
     const hasAntiseptic = equipment.some(e => e.name.toLowerCase().includes('antiseptic') || e.name.toLowerCase().includes('alcohol'));
-    const hasPainkillers = equipment.some(e => e.name.toLowerCase().includes('painkiller') || e.name.toLowerCase().includes('ibuprofen'));
 
     if (hasFirstAid) {
       decisions.push({
