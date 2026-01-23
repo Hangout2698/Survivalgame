@@ -1,0 +1,122 @@
+{
+  "metadata": {
+    "source": "SAS Survival Handbook",
+    "extractedAt": "2026-01-22T15:14:29.046Z",
+    "totalCategories": 10,
+    "totalPrinciples": 90,
+    "cleanedAt": "2026-01-22T15:14:29.047Z",
+    "cleaningNote": "Filtered PDF artifacts using automated script, manually curated additional principles"
+  },
+  "principles": {
+    "shelter": [
+      "Shelter protects from wind, rain, and temperature extremes.",
+      "Build shelter before dark to avoid working in dangerous conditions.",
+      "Insulation from the ground is as important as overhead cover.",
+      "Natural shelters like caves or fallen trees can save time and energy.",
+      "Location is crucial - avoid valleys where cold air settles and areas prone to flooding.",
+      "A small shelter is easier to heat than a large one.",
+      "Always test the stability of natural shelters before relying on them.",
+      "Reflective surfaces behind you can double the warmth from a fire.",
+      "Ventilation prevents carbon monoxide poisoning in enclosed shelters."
+    ],
+    "water": [
+      "Water is critical - dehydration kills faster than starvation.",
+      "Always purify water from natural sources to avoid illness.",
+      "In cold climates, melting snow requires energy and lowers body temperature.",
+      "Ration sweat, not water - work during cooler hours to conserve water.",
+      "Clear running water from high elevations is generally safer than still water.",
+      "Boiling water for one minute kills most pathogens.",
+      "Morning dew can be collected from vegetation using absorbent cloth.",
+      "Never drink seawater - it accelerates dehydration.",
+      "Signs of dehydration include dark urine, dizziness, and decreased urination."
+    ],
+    "fire": [
+      "Fire provides warmth, water purification, signaling, and psychological comfort.",
+      "Prepare tinder, kindling, and fuel before attempting to light a fire.",
+      "Protect fire from wind and rain once started.",
+      "Fire requires constant attention and fuel gathering.",
+      "Dead standing wood is drier than wood on the ground.",
+      "Build fire on bare ground or rock to prevent spread.",
+      "Three fires in a triangle is an international distress signal.",
+      "Feather sticks increase surface area for easier ignition.",
+      "Never leave a fire unattended in dry or windy conditions."
+    ],
+    "food": [
+      "Food is the lowest priority in short-term survival.",
+      "Energy spent hunting or foraging must be worth the calories gained.",
+      "Some plants and animals are poisonous - know what you're eating.",
+      "Insects and grubs are often safe protein sources if properly prepared.",
+      "Cook all wild meat thoroughly to kill parasites and bacteria.",
+      "Avoid plants with milky sap, bitter taste, or three-leafed patterns.",
+      "Fish and insects are easier to catch than large game.",
+      "Universal edibility test can help identify safe plants when necessary.",
+      "Berries eaten by birds are not always safe for humans."
+    ],
+    "navigation": [
+      "Stay put if you're lost and people know your location.",
+      "Navigate only if you know your destination and have energy.",
+      "The sun rises in the east and sets in the west.",
+      "Following water downstream often leads to civilization but uses energy.",
+      "Mark your trail to avoid walking in circles.",
+      "North Star remains fixed while other stars rotate around it.",
+      "Moss on trees is not a reliable indicator of north.",
+      "High ground provides better vantage points for orientation.",
+      "Travel during daylight hours to avoid injury and conserve energy."
+    ],
+    "signaling": [
+      "Three of anything is the international distress signal.",
+      "Signal when aircraft or potential rescuers are nearby.",
+      "Bright colors, smoke, mirrors, and noise all attract attention.",
+      "Ground-to-air signals should be large and contrasting.",
+      "Signal mirrors can be seen for miles on sunny days.",
+      "Smoke signals work best on calm, clear days.",
+      "Conserve signaling devices until you have a confirmed sighting.",
+      "SOS in Morse code is three short, three long, three short.",
+      "Maintain signals constantly once rescue attempt begins."
+    ],
+    "firstAid": [
+      "Stop bleeding first - it can be life-threatening within minutes.",
+      "Treat injuries promptly before they worsen.",
+      "Hypothermia and hyperthermia are serious threats requiring immediate action.",
+      "Immobilize fractures to prevent further damage.",
+      "Clean wounds thoroughly to prevent infection.",
+      "Elevate bleeding limbs above the heart when possible.",
+      "Direct pressure is the most effective way to control bleeding.",
+      "Symptoms of shock include pale skin, rapid pulse, and confusion.",
+      "Remove constrictive clothing and jewelry before swelling increases."
+    ],
+    "priorities": [
+      "Rule of 3s: You can survive 3 minutes without air, 3 hours without shelter in harsh conditions, 3 days without water, and 3 weeks without food.",
+      "STOP principle: Stop, Think, Observe, Plan before taking action.",
+      "Stay put if lost: Movement without a plan can make rescue harder and waste energy.",
+      "Shelter is often more critical than food or water in extreme weather.",
+      "Signal for rescue using three of anything (fires, whistle blows, mirror flashes) - the international distress signal.",
+      "Address immediate dangers first, then focus on long-term survival.",
+      "Conserve energy by working smarter, not harder.",
+      "Plan for the worst and hope for the best.",
+      "Take inventory of resources before making decisions."
+    ],
+    "psychology": [
+      "Panic leads to poor decisions and wastes energy.",
+      "Maintaining morale is essential for survival.",
+      "Small victories and routines help maintain mental stability.",
+      "Fear is natural but must be controlled through planning and action.",
+      "A positive mental attitude significantly increases survival chances.",
+      "Set realistic short-term goals to maintain motivation.",
+      "Keep your mind active to prevent despair and hopelessness.",
+      "Remember loved ones to strengthen your will to survive.",
+      "Accept the reality of your situation before you can improve it."
+    ],
+    "weather": [
+      "Wind chill makes temperatures feel colder and increases heat loss.",
+      "Wet clothing loses insulating properties and accelerates hypothermia.",
+      "Shade and reducing activity helps in extreme heat.",
+      "Weather changes can turn a manageable situation deadly.",
+      "Layer clothing to trap warm air and allow temperature regulation.",
+      "Cotton kills in cold, wet conditions - choose wool or synthetics.",
+      "Protect extremities first - fingers, toes, ears, and nose.",
+      "Sweat management prevents heat loss through evaporation.",
+      "Recognize early signs of hypothermia and hyperthermia."
+    ]
+  }
+}
