@@ -8,6 +8,7 @@ export function initializeMetrics(scenario: Scenario): PlayerMetrics {
   let injurySeverity = 0;
   let morale = 70;
   let shelter = 0;
+  let fireQuality = 0;
 
   if (scenario.initialCondition.includes('vehicle') || scenario.initialCondition.includes('car')) {
     shelter = 100;
@@ -55,6 +56,7 @@ export function initializeMetrics(scenario: Scenario): PlayerMetrics {
     injurySeverity,
     morale,
     shelter,
+    fireQuality,
     signalEffectiveness,
     cumulativeRisk,
     survivalProbability: 0
@@ -67,6 +69,7 @@ export function initializeMetrics(scenario: Scenario): PlayerMetrics {
     injurySeverity,
     morale,
     shelter,
+    fireQuality,
     signalEffectiveness,
     cumulativeRisk,
     survivalProbability
@@ -85,6 +88,7 @@ export function updateMetrics(
     injurySeverity: clamp(current.injurySeverity + (changes.injurySeverity || 0), 0, 100),
     morale: clamp(current.morale + (changes.morale || 0), 0, 100),
     shelter: clamp(current.shelter + (changes.shelter || 0), 0, 100),
+    fireQuality: clamp(current.fireQuality + (changes.fireQuality || 0), 0, 100),
     signalEffectiveness: 0,
     cumulativeRisk: current.cumulativeRisk + (changes.cumulativeRisk || 0),
     survivalProbability: 0
@@ -107,8 +111,18 @@ export function applyEnvironmentalEffects(
     hydration: 0,
     morale: 0,
     shelter: 0,
+    fireQuality: 0,
     injurySeverity: 0
   };
+
+  // Principle: "Wet clothing loses insulating properties and accelerates hypothermia"
+  // Wetness reduces shelter effectiveness
+  let wetnessMultiplier = 1.0;
+  if (scenario.wetness === 'soaked') {
+    wetnessMultiplier = 2.0; // Double cold damage when soaked
+  } else if (scenario.wetness === 'damp') {
+    wetnessMultiplier = 1.4; // 40% more cold damage when damp
+  }
 
   const shelterMultiplier = 1 - (metrics.shelter / 100) * 0.85;
 
@@ -117,15 +131,15 @@ export function applyEnvironmentalEffects(
   const tempDiff = effectiveTemp - 20;
 
   if (scenario.weather === 'storm' || scenario.weather === 'snow') {
-    changes.bodyTemperature = -0.2 * shelterMultiplier;
-    changes.energy = -1.4 * shelterMultiplier;
+    changes.bodyTemperature = -0.2 * shelterMultiplier * wetnessMultiplier;
+    changes.energy = -1.4 * shelterMultiplier * wetnessMultiplier;
     changes.morale = -1.5 * (1 - (metrics.shelter / 100) * 0.5);
     if (metrics.shelter < 50) {
       changes.shelter = -2;
     }
   } else if (scenario.weather === 'rain') {
-    changes.bodyTemperature = -0.15 * shelterMultiplier;
-    changes.energy = -1 * shelterMultiplier;
+    changes.bodyTemperature = -0.15 * shelterMultiplier * wetnessMultiplier;
+    changes.energy = -1 * shelterMultiplier * wetnessMultiplier;
     if (metrics.shelter < 60) {
       changes.shelter = -1.5;
     }
@@ -135,11 +149,11 @@ export function applyEnvironmentalEffects(
   }
 
   if (tempDiff < -15) {
-    changes.bodyTemperature = (changes.bodyTemperature || 0) - (0.3 * shelterMultiplier);
-    changes.energy = (changes.energy || 0) - (2 * shelterMultiplier);
+    changes.bodyTemperature = (changes.bodyTemperature || 0) - (0.3 * shelterMultiplier * wetnessMultiplier);
+    changes.energy = (changes.energy || 0) - (2 * shelterMultiplier * wetnessMultiplier);
   } else if (tempDiff < -5) {
-    changes.bodyTemperature = (changes.bodyTemperature || 0) - (0.15 * shelterMultiplier);
-    changes.energy = (changes.energy || 0) - (1 * shelterMultiplier);
+    changes.bodyTemperature = (changes.bodyTemperature || 0) - (0.15 * shelterMultiplier * wetnessMultiplier);
+    changes.energy = (changes.energy || 0) - (1 * shelterMultiplier * wetnessMultiplier);
   } else if (tempDiff > 15) {
     changes.hydration = (changes.hydration || 0) - (2 * (1 - (metrics.shelter / 100) * 0.5));
     changes.energy = (changes.energy || 0) - (1.4 * (1 - (metrics.shelter / 100) * 0.3));
@@ -148,6 +162,51 @@ export function applyEnvironmentalEffects(
   if (scenario.timeOfDay === 'night') {
     changes.bodyTemperature = (changes.bodyTemperature || 0) - (0.15 * shelterMultiplier);
     changes.morale = (changes.morale || 0) - (0.5 * (1 - (metrics.shelter / 100) * 0.5));
+  }
+
+  // Fire degradation based on weather
+  if (metrics.fireQuality > 0) {
+    const shelterProtection = (metrics.shelter / 100) * 0.6; // Up to 60% protection
+    let fireDegradation = -8; // Base degradation per turn
+
+    if (scenario.weather === 'rain') {
+      fireDegradation -= 15;
+    } else if (scenario.weather === 'storm' || scenario.weather === 'snow') {
+      fireDegradation -= 20;
+    } else if (scenario.weather === 'wind') {
+      fireDegradation -= 5;
+    }
+
+    // Apply shelter protection
+    fireDegradation = fireDegradation * (1 - shelterProtection);
+    changes.fireQuality = fireDegradation;
+  }
+
+  // Fire warmth benefits
+  if (metrics.fireQuality > 25) {
+    let fireWarmth = 0;
+    let fireMorale = 0;
+
+    if (metrics.fireQuality >= 76) {
+      // Strong fire
+      fireWarmth = 1.5;
+      fireMorale = 2.0; // Strong fire provides significant psychological comfort
+    } else if (metrics.fireQuality >= 51) {
+      // Burning
+      fireWarmth = 0.8;
+      fireMorale = 1.2; // Burning fire provides good psychological comfort
+    } else {
+      // Smoldering
+      fireWarmth = 0.3;
+      fireMorale = 0.5; // Smoldering fire provides minimal comfort
+    }
+
+    // Shelter amplifies warmth benefit (up to 80% increase)
+    const shelterAmplifier = 1 + (metrics.shelter / 100) * 0.8;
+    fireWarmth = fireWarmth * shelterAmplifier;
+
+    changes.bodyTemperature = (changes.bodyTemperature || 0) + fireWarmth;
+    changes.morale = (changes.morale || 0) + fireMorale;
   }
 
   changes.hydration = (changes.hydration || 0) - 1.5;

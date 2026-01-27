@@ -25,7 +25,11 @@ const equipmentPool: Equipment[] = [
   { name: 'Energy bar', quantity: 2, condition: 'good' },
   { name: 'Phone (no signal, 15% battery)', quantity: 1, condition: 'good' },
   { name: 'Rope (10ft)', quantity: 1, condition: 'worn' },
-  { name: 'First aid kit (partial)', quantity: 1, condition: 'worn' }
+  { name: 'First aid kit (partial)', quantity: 1, condition: 'worn' },
+  { name: 'Tinder bundle', quantity: 2, condition: 'good' },
+  { name: 'Kindling sticks', quantity: 3, condition: 'good' },
+  { name: 'Fuel logs', quantity: 1, condition: 'good' },
+  { name: 'Matches', quantity: 1, condition: 'good' }
 ];
 
 const initialConditions = [

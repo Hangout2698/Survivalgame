@@ -5,6 +5,7 @@ import {
   getEducationalFeedback,
   searchPrinciples
 } from './survivalPrinciplesService';
+import { generateConsequenceExplanation } from './consequenceExplainer';
 
 // Calculate success bonus based on principle alignment score
 function calculateSuccessBonus(state: GameState): number {
@@ -54,11 +55,11 @@ function determineQuality(
 
   // Excellent decisions
   if (decision.id === 'shelter' && turnNumber <= 3) return 'excellent';
-  if ((decision.id === 'use-whistle' || decision.id === 'use-mirror' || decision.id === 'use-flashlight-signal')
+  if ((decision.id === 'use-whistle' || decision.id === 'use-mirror' || decision.id === 'use-flashlight-signal' || decision.id === 'signal-fire')
       && metrics.signalEffectiveness > 60) return 'excellent';
   if ((decision.id === 'treat-injury-full' || decision.id === 'treat-injury-partial')
       && metrics.injurySeverity > 50) return 'excellent';
-  if (decision.id === 'start-fire'
+  if ((decision.id === 'start-fire-lighter' || decision.id === 'start-fire-matches' || decision.id === 'start-fire-friction')
       && (scenario.temperature < 10 || metrics.bodyTemperature < 36)) return 'excellent';
   if (decision.id === 'use-blanket' && metrics.bodyTemperature < 35.5) return 'excellent';
 
@@ -486,14 +487,167 @@ function getEquipmentBasedDecisions(state: GameState): Decision[] {
     });
   }
 
-  if (equipment.some(e => e.name.toLowerCase().includes('lighter') || e.name.toLowerCase().includes('matches')) &&
-      equipment.some(e => e.name.toLowerCase().includes('firewood'))) {
+  return decisions;
+}
+
+function getFireManagementDecisions(state: GameState): Decision[] {
+  const { equipment, metrics } = state;
+  const decisions: Decision[] = [];
+
+  const hasTinder = equipment.some(e => e.name.toLowerCase().includes('tinder'));
+  const hasKindling = equipment.some(e => e.name.toLowerCase().includes('kindling'));
+  const hasFuelLogs = equipment.some(e => e.name.toLowerCase().includes('fuel log'));
+  const hasLighter = equipment.some(e => e.name.toLowerCase().includes('lighter'));
+  const hasMatches = equipment.some(e => e.name.toLowerCase().includes('matches'));
+
+  // Gathering materials
+  if (metrics.energy > 20) {
     decisions.push({
-      id: 'start-fire',
-      text: 'Start fire with lighter and firewood',
+      id: 'gather-tinder',
+      text: 'Gather tinder (dry grass, bark)',
+      energyCost: 8,
+      riskLevel: 1,
+      timeRequired: 1
+    });
+  }
+
+  if (metrics.energy > 25) {
+    decisions.push({
+      id: 'gather-firewood',
+      text: 'Gather firewood (kindling and logs)',
       energyCost: 15,
       riskLevel: 2,
       timeRequired: 2
+    });
+  }
+
+  // Starting fire (only if fire is low/extinguished)
+  if (metrics.fireQuality < 30) {
+    if (hasLighter && hasTinder) {
+      decisions.push({
+        id: 'start-fire-lighter',
+        text: 'Start fire with lighter',
+        energyCost: 5,
+        riskLevel: 1,
+        timeRequired: 1
+      });
+    }
+
+    if (hasMatches && hasTinder) {
+      decisions.push({
+        id: 'start-fire-matches',
+        text: 'Start fire with matches',
+        energyCost: 8,
+        riskLevel: 2,
+        timeRequired: 1
+      });
+    }
+
+    if (metrics.energy > 30 && !hasLighter && !hasMatches) {
+      decisions.push({
+        id: 'start-fire-friction',
+        text: 'Start fire by friction (exhausting)',
+        energyCost: 25,
+        riskLevel: 4,
+        timeRequired: 3
+      });
+    }
+  }
+
+  // Maintaining fire (only if fire exists)
+  if (metrics.fireQuality > 0 && metrics.fireQuality < 95) {
+    if (hasKindling) {
+      decisions.push({
+        id: 'add-fuel-small',
+        text: 'Add kindling to fire',
+        energyCost: 3,
+        riskLevel: 1,
+        timeRequired: 1
+      });
+    }
+
+    if (hasFuelLogs) {
+      decisions.push({
+        id: 'add-fuel-large',
+        text: 'Add fuel log to fire',
+        energyCost: 4,
+        riskLevel: 1,
+        timeRequired: 1
+      });
+    }
+
+    decisions.push({
+      id: 'tend-fire',
+      text: 'Tend fire (rearrange coals)',
+      energyCost: 2,
+      riskLevel: 1,
+      timeRequired: 1
+    });
+  }
+
+  // Signal fire (requires strong fire)
+  if (metrics.fireQuality > 50) {
+    decisions.push({
+      id: 'signal-fire',
+      text: 'Add green branches for smoke signal',
+      energyCost: 8,
+      riskLevel: 2,
+      timeRequired: 2
+    });
+  }
+
+  return decisions;
+}
+
+function getWaterPurificationDecisions(state: GameState): Decision[] {
+  const { equipment, metrics } = state;
+  const decisions: Decision[] = [];
+
+  const hasEmptyBottle = equipment.some(e => e.name.toLowerCase().includes('water bottle (empty)'));
+  const hasUntreatedWater = equipment.some(e => e.name.toLowerCase().includes('water bottle (untreated)'));
+  const hasCleanWater = equipment.some(e => e.name.toLowerCase().includes('water bottle (clean)') ||
+    (e.name.toLowerCase().includes('water bottle') && !e.name.toLowerCase().includes('empty') && !e.name.toLowerCase().includes('untreated')));
+
+  // Collecting water
+  if ((hasEmptyBottle || !equipment.some(e => e.name.toLowerCase().includes('water bottle'))) && metrics.energy > 15) {
+    decisions.push({
+      id: 'collect-water',
+      text: 'Find and collect water',
+      energyCost: 12,
+      riskLevel: 2,
+      timeRequired: 2
+    });
+  }
+
+  // Purifying water
+  if (hasUntreatedWater && metrics.fireQuality > 50) {
+    decisions.push({
+      id: 'boil-water',
+      text: 'Boil water to purify',
+      energyCost: 8,
+      riskLevel: 1,
+      timeRequired: 2
+    });
+  }
+
+  // Drinking water
+  if (hasCleanWater) {
+    decisions.push({
+      id: 'drink-clean-water',
+      text: 'Drink clean water',
+      energyCost: 2,
+      riskLevel: 1,
+      timeRequired: 1
+    });
+  }
+
+  if (hasUntreatedWater && metrics.hydration < 40) {
+    decisions.push({
+      id: 'drink-untreated-water',
+      text: 'Drink untreated water (risky)',
+      energyCost: 2,
+      riskLevel: 5,
+      timeRequired: 1
     });
   }
 
@@ -509,6 +663,12 @@ export function generateDecisions(state: GameState): Decision[] {
 
   const equipmentDecisions = getEquipmentBasedDecisions(state);
   decisions.push(...equipmentDecisions);
+
+  const fireDecisions = getFireManagementDecisions(state);
+  decisions.push(...fireDecisions);
+
+  const waterDecisions = getWaterPurificationDecisions(state);
+  decisions.push(...waterDecisions);
 
   if (metrics.energy > 25 && state.currentEnvironment !== 'desert') {
     decisions.push({
@@ -563,6 +723,24 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
   const successBonus = calculateSuccessBonus(state);
   const roll = Math.random() + successBonus;
   const actualEnergyCost = scaleEnergyCost(decision.energyCost, decision.riskLevel, state);
+
+  // Calculate additional hydration cost for working during hot conditions
+  // Principle: "Ration sweat, not water - work during cooler hours to conserve water"
+  let additionalHydrationCost = 0;
+  if (actualEnergyCost > 15) { // High-energy activities only
+    if (state.scenario.timeOfDay === 'midday' || state.scenario.timeOfDay === 'afternoon') {
+      if (state.scenario.weather === 'heat' || state.scenario.temperature > 30) {
+        additionalHydrationCost = -6; // Major penalty for hard work in heat
+      } else if (state.scenario.temperature > 20) {
+        additionalHydrationCost = -3; // Moderate penalty for warm conditions
+      }
+    }
+
+    // Desert environment amplifies hydration loss
+    if (state.currentEnvironment === 'desert') {
+      additionalHydrationCost -= 2;
+    }
+  }
 
   const guidance = state.survivalGuide
     ? extractRelevantGuidance(state.survivalGuide, state, 'outcome')
@@ -627,15 +805,28 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       break;
 
     case 'descend':
+      // Principle: "Travel during daylight hours to avoid injury and conserve energy"
+      const isNightDescend = state.scenario.timeOfDay === 'night' || state.scenario.timeOfDay === 'dusk';
+      const nightPenalty = isNightDescend ? 1.5 : 1.0; // 50% more danger at night
+
       metricsChange = {
-        energy: -decision.energyCost,
+        energy: -decision.energyCost * nightPenalty,
         hydration: -10,
-        cumulativeRisk: 12
+        cumulativeRisk: 12 * nightPenalty
       };
 
-      if (roll < 0.25) {
-        metricsChange.injurySeverity = 20;
-        immediateEffect = 'You slip on loose rock. The fall is hard.';
+      if (isNightDescend) {
+        consequences.push('Descending in low light is extremely dangerous.');
+      }
+
+      // Night increases injury chance significantly
+      const injuryThreshold = isNightDescend ? 0.40 : 0.25;
+
+      if (roll < injuryThreshold) {
+        metricsChange.injurySeverity = isNightDescend ? 30 : 20; // Worse injuries at night
+        immediateEffect = isNightDescend
+          ? 'You cannot see the terrain clearly and fall hard in the darkness.'
+          : 'You slip on loose rock. The fall is hard.';
         consequences.push('You are injured and shaken.');
         metricsChange.morale = -15;
         delayedEffects.push({
@@ -1201,19 +1392,452 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       }
       break;
 
-    case 'start-fire':
-      const firewoodItem = state.equipment.find(e => e.name.includes('Firewood') || e.name.includes('firewood'));
+    // Fire gathering
+    case 'gather-tinder':
       metricsChange = {
         energy: -decision.energyCost,
-        bodyTemperature: 1.2,
-        morale: 12,
+        hydration: -2,
+        morale: 3
+      };
+      if (roll > 0.7) {
+        immediateEffect = 'You find excellent dry tinder - grass, bark, and pine needles.';
+        consequences.push('This tinder will catch fire easily.');
+        equipmentChanges.added = [{ name: 'Tinder bundle', quantity: 2, condition: 'good' as const }];
+      } else {
+        immediateEffect = 'You gather some usable tinder from the area.';
+        consequences.push('It should be enough to start a fire.');
+        equipmentChanges.added = [{ name: 'Tinder bundle', quantity: 1, condition: 'good' as const }];
+      }
+      break;
+
+    case 'gather-firewood':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -4,
+        morale: 5
+      };
+      if (roll > 0.6) {
+        immediateEffect = 'You gather quality firewood - both kindling and larger fuel.';
+        consequences.push('You collect a good supply of dry wood.');
+        equipmentChanges.added = [
+          { name: 'Kindling sticks', quantity: 3, condition: 'good' as const },
+          { name: 'Fuel logs', quantity: 1, condition: 'good' as const }
+        ];
+      } else {
+        immediateEffect = 'You find some firewood, though not as much as you hoped.';
+        consequences.push('The wood quality is acceptable.');
+        equipmentChanges.added = [
+          { name: 'Kindling sticks', quantity: 2, condition: 'good' as const }
+        ];
+      }
+      break;
+
+    // Starting fire
+    case 'start-fire-lighter':
+      const tinderForLighter = state.equipment.find(e => e.name.toLowerCase().includes('tinder'));
+
+      // Weather affects fire starting difficulty
+      let lighterThreshold = 0.05; // Base 95% success
+      if (state.scenario.weather === 'rain') {
+        lighterThreshold = 0.35; // 65% success in rain
+      } else if (state.scenario.weather === 'storm' || state.scenario.weather === 'snow') {
+        lighterThreshold = 0.55; // 45% success in storm/snow
+      } else if (state.scenario.weather === 'wind' && state.scenario.windSpeed > 30) {
+        lighterThreshold = 0.25; // 75% success in high wind
+      }
+
+      // Shelter provides protection when starting fire
+      if (state.metrics.shelter > 60) {
+        lighterThreshold = lighterThreshold * 0.5; // Shelter reduces difficulty
+      }
+
+      metricsChange = {
+        energy: -decision.energyCost,
+        fireQuality: 75,
+        morale: 18,
+        cumulativeRisk: -10
+      };
+
+      if (roll < lighterThreshold) {
+        // Failure
+        immediateEffect = 'The lighter sparks but the wind/rain snuffs out every attempt.';
+        consequences.push('The conditions are too harsh. The fire will not catch.');
+        metricsChange.fireQuality = 0;
+        metricsChange.morale = -12;
+        metricsChange.cumulativeRisk = 5;
+      } else if (roll > 0.95) {
+        immediateEffect = 'The lighter sparks perfectly. The tinder catches and flames quickly spread.';
+        consequences.push('You have a strong fire burning.');
+        metricsChange.fireQuality = 85;
+      } else if (roll > lighterThreshold + 0.3) {
+        immediateEffect = 'The lighter ignites the tinder. Soon you have a good fire.';
+        consequences.push('The fire is burning steadily.');
+      } else {
+        immediateEffect = 'After many attempts, the lighter finally lights the damp tinder.';
+        consequences.push('The fire starts weakly but should build.');
+        metricsChange.fireQuality = 60;
+        metricsChange.morale = 12;
+      }
+      if (tinderForLighter) {
+        if (tinderForLighter.quantity > 1) {
+          equipmentChanges.updated = [{
+            ...tinderForLighter,
+            quantity: tinderForLighter.quantity - 1
+          }];
+        } else {
+          equipmentChanges.removed = [tinderForLighter.name];
+        }
+      }
+      break;
+
+    case 'start-fire-matches':
+      const tinderForMatches = state.equipment.find(e => e.name.toLowerCase().includes('tinder'));
+      const matchesItem = state.equipment.find(e => e.name.toLowerCase().includes('matches'));
+
+      // Weather affects matches even more than lighters
+      let matchesThreshold = 0.15; // Base 85% success
+      if (state.scenario.weather === 'rain') {
+        matchesThreshold = 0.50; // 50% success in rain (matches get wet easily)
+      } else if (state.scenario.weather === 'storm' || state.scenario.weather === 'snow') {
+        matchesThreshold = 0.70; // 30% success in storm/snow
+      } else if (state.scenario.weather === 'wind' && state.scenario.windSpeed > 30) {
+        matchesThreshold = 0.40; // 60% success in high wind
+      }
+
+      // Shelter provides significant protection for matches
+      if (state.metrics.shelter > 60) {
+        matchesThreshold = matchesThreshold * 0.4; // Shelter greatly helps with matches
+      }
+
+      metricsChange = {
+        energy: -decision.energyCost,
+        fireQuality: 70,
+        morale: 15,
         cumulativeRisk: -8
       };
-      immediateEffect = 'You successfully start a fire. Warmth spreads through you.';
-      consequences.push('Your body temperature increases significantly.');
-      consequences.push('The fire provides comfort and safety.');
-      if (firewoodItem) {
-        equipmentChanges.removed = [firewoodItem.name];
+
+      if (roll < matchesThreshold) {
+        // Failure - matches wasted
+        immediateEffect = 'The matches are too damp or the wind is too strong. They burn out uselessly.';
+        consequences.push('You wasted your matches. The fire did not catch.');
+        metricsChange.fireQuality = 0;
+        metricsChange.morale = -15;
+        metricsChange.cumulativeRisk = 8;
+      } else if (roll > 0.85) {
+        immediateEffect = 'The match strikes true and the tinder catches immediately.';
+        consequences.push('You have a solid fire going.');
+        metricsChange.fireQuality = 80;
+      } else if (roll > matchesThreshold + 0.2) {
+        immediateEffect = 'After a couple tries, the match lights the tinder successfully.';
+        consequences.push('The fire is building nicely.');
+      } else {
+        immediateEffect = 'You use several matches before one finally catches the damp tinder.';
+        consequences.push('The fire is weak but alive.');
+        metricsChange.fireQuality = 50;
+        metricsChange.morale = 8;
+      }
+      if (tinderForMatches) {
+        if (tinderForMatches.quantity > 1) {
+          equipmentChanges.updated = [{
+            ...tinderForMatches,
+            quantity: tinderForMatches.quantity - 1
+          }];
+        } else {
+          equipmentChanges.removed = [tinderForMatches.name];
+        }
+      }
+      if (matchesItem) {
+        equipmentChanges.removed = (equipmentChanges.removed || []).concat([matchesItem.name]);
+      }
+      break;
+
+    case 'start-fire-friction':
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: -8,
+        cumulativeRisk: 8
+      };
+
+      // Friction fire is very difficult and heavily affected by conditions
+      let frictionSuccessRate = 0.4 + (state.metrics.energy / 100) * 0.2;
+
+      // Weather drastically reduces friction fire success
+      if (state.scenario.weather === 'rain' || state.scenario.weather === 'storm' || state.scenario.weather === 'snow') {
+        frictionSuccessRate *= 0.3; // 70% penalty for wet conditions
+      } else if (state.scenario.weather === 'wind' && state.scenario.windSpeed > 25) {
+        frictionSuccessRate *= 0.6; // 40% penalty for wind
+      }
+
+      // Shelter helps significantly with friction fire
+      if (state.metrics.shelter > 60) {
+        frictionSuccessRate *= 1.5; // 50% boost from shelter
+        frictionSuccessRate = Math.min(0.75, frictionSuccessRate); // Cap at 75%
+      }
+
+      if (roll > (1 - frictionSuccessRate)) {
+        immediateEffect = 'After exhausting effort, you create an ember. You nurse it into flames.';
+        consequences.push('The friction method worked! You have fire.');
+        metricsChange.fireQuality = 65;
+        metricsChange.morale = 25;
+        metricsChange.cumulativeRisk = -5;
+      } else if (roll > 0.3) {
+        immediateEffect = 'You create smoke but cannot sustain the ember long enough.';
+        consequences.push('Despite your effort, the fire fails to catch.');
+        metricsChange.morale = -10;
+      } else {
+        immediateEffect = 'Your hands blister and the wood never even smokes properly.';
+        consequences.push('The attempt was a complete failure.');
+        metricsChange.morale = -15;
+        metricsChange.injurySeverity = 5;
+      }
+      break;
+
+    // Maintaining fire
+    case 'add-fuel-small':
+      const kindlingItem = state.equipment.find(e => e.name.toLowerCase().includes('kindling'));
+      metricsChange = {
+        energy: -decision.energyCost,
+        fireQuality: 15,
+        morale: 4
+      };
+      immediateEffect = 'You add kindling to the fire. The flames grow brighter.';
+      consequences.push('The fire will burn steadily for a while.');
+      if (kindlingItem) {
+        if (kindlingItem.quantity > 1) {
+          equipmentChanges.updated = [{
+            ...kindlingItem,
+            quantity: kindlingItem.quantity - 1
+          }];
+        } else {
+          equipmentChanges.removed = [kindlingItem.name];
+          consequences.push('That was your last kindling.');
+        }
+      }
+      break;
+
+    case 'add-fuel-large':
+      const fuelLogItem = state.equipment.find(e => e.name.toLowerCase().includes('fuel log'));
+      metricsChange = {
+        energy: -decision.energyCost,
+        fireQuality: 35,
+        morale: 8
+      };
+      immediateEffect = 'You place a large log on the fire. It catches and burns strongly.';
+      consequences.push('This fuel should last for several hours.');
+      if (fuelLogItem) {
+        if (fuelLogItem.quantity > 1) {
+          equipmentChanges.updated = [{
+            ...fuelLogItem,
+            quantity: fuelLogItem.quantity - 1
+          }];
+        } else {
+          equipmentChanges.removed = [fuelLogItem.name];
+          consequences.push('That was your last fuel log.');
+        }
+      }
+      break;
+
+    case 'tend-fire':
+      metricsChange = {
+        energy: -decision.energyCost,
+        fireQuality: 8,
+        morale: 2
+      };
+      immediateEffect = 'You rearrange the coals and add air flow to the fire.';
+      consequences.push('The fire burns more efficiently.');
+      break;
+
+    case 'signal-fire':
+      // Principle: "Fire provides signaling" and "Three fires in a triangle is international distress signal"
+      metricsChange = {
+        energy: -actualEnergyCost,
+        fireQuality: -15, // Using fire for signaling reduces it
+        morale: 8
+      };
+
+      // Signal effectiveness affected by same factors as other signals
+      const fireSignalEffectiveness = state.metrics.signalEffectiveness + 20; // Fire is more visible
+      const isNightOrDusk = state.scenario.timeOfDay === 'night' || state.scenario.timeOfDay === 'dusk';
+
+      // Night/dusk: fire is visible, use it
+      // Day: smoke from green branches is visible
+      if (isNightOrDusk) {
+        if (roll > 0.65 && fireSignalEffectiveness > 60) {
+          immediateEffect = 'You build up the fire to create a bright beacon. A distant light flashes in response!';
+          consequences.push('Someone saw your signal! Help is coming!');
+          metricsChange.morale = 30;
+          metricsChange.cumulativeRisk = -20;
+        } else if (roll > 0.45) {
+          immediateEffect = 'You stoke the fire high. The flames are visible for miles in the darkness.';
+          consequences.push('This fire beacon is a strong signal at night.');
+          metricsChange.cumulativeRisk = -8;
+        } else {
+          immediateEffect = 'You build up the fire, though clouds or terrain may obstruct the view.';
+          consequences.push('The signal may still attract attention.');
+          metricsChange.cumulativeRisk = -4;
+        }
+      } else {
+        // Daytime: use smoke
+        if (roll > 0.7 && fireSignalEffectiveness > 60) {
+          immediateEffect = 'You add green branches. Thick white smoke billows up. You hear a helicopter!';
+          consequences.push('Your smoke signal was spotted! Rescue is en route!');
+          metricsChange.morale = 30;
+          metricsChange.cumulativeRisk = -20;
+        } else if (roll > 0.5) {
+          immediateEffect = 'Green branches create excellent smoke. The signal is visible from far away.';
+          consequences.push('The smoke column rises high into the sky.');
+          metricsChange.cumulativeRisk = -8;
+        } else {
+          immediateEffect = 'You add green branches to create smoke, but wind disperses it quickly.';
+          consequences.push('The signal is weaker than hoped but may still be seen.');
+          metricsChange.cumulativeRisk = -3;
+        }
+      }
+
+      // This is a signal attempt that can lead to rescue
+      break;
+
+    // Water collection and purification
+    case 'collect-water':
+      // Environment affects water availability and quality
+      let waterSuccessThreshold = 0.3; // Base threshold (lower = easier)
+      let waterQualityBonus = 0;
+      let environmentFeedback = '';
+
+      switch (state.currentEnvironment) {
+        case 'mountains':
+          // "Clear running water from high elevations is generally safer"
+          waterSuccessThreshold = 0.2; // Easier to find
+          waterQualityBonus = 0.3; // Better quality
+          environmentFeedback = 'Mountain streams are clear and cold.';
+          break;
+        case 'forest':
+          waterSuccessThreshold = 0.3; // Moderate difficulty
+          waterQualityBonus = 0.2;
+          environmentFeedback = 'Forest streams and pools are available.';
+          break;
+        case 'coast':
+          waterSuccessThreshold = 0.25; // Easy to find BUT...
+          waterQualityBonus = -0.2; // Risk of saltwater contamination
+          environmentFeedback = 'Coastal water sources must be carefully checked for salt content.';
+          break;
+        case 'tundra':
+          waterSuccessThreshold = 0.4; // Water exists but frozen
+          waterQualityBonus = 0.1;
+          environmentFeedback = 'You must melt snow or break through ice.';
+          metricsChange = { energy: -(decision.energyCost + 5), hydration: -5 }; // Extra energy/hydration cost
+          break;
+        case 'desert':
+          waterSuccessThreshold = 0.7; // Very hard to find
+          waterQualityBonus = -0.3; // Often contaminated when found
+          environmentFeedback = 'Water is scarce in the desert.';
+          metricsChange = { energy: -(decision.energyCost + 3), hydration: -6 }; // Extra cost from heat
+          break;
+        case 'urban-edge':
+          waterSuccessThreshold = 0.35; // Moderate difficulty
+          waterQualityBonus = -0.15; // Urban pollution risk
+          environmentFeedback = 'Urban runoff may contaminate natural water sources.';
+          break;
+      }
+
+      if (!metricsChange.energy) {
+        metricsChange = {
+          energy: -decision.energyCost,
+          hydration: -3,
+          morale: 5
+        };
+      }
+
+      const adjustedRoll = roll + waterQualityBonus;
+
+      if (roll < waterSuccessThreshold) {
+        // Failure to find water
+        immediateEffect = `You search extensively but find no drinkable water. ${environmentFeedback}`;
+        consequences.push('Your search was unsuccessful.');
+        metricsChange.morale = -10;
+      } else if (adjustedRoll > 0.75) {
+        immediateEffect = `You find a clear, flowing water source. ${environmentFeedback}`;
+        consequences.push('The water looks clean but should still be purified.');
+        equipmentChanges.added = [{ name: 'Water bottle (untreated)', quantity: 1, condition: 'good' as const }];
+        metricsChange.morale = 12;
+      } else if (adjustedRoll > 0.45) {
+        immediateEffect = `You locate a water source. ${environmentFeedback}`;
+        consequences.push('The water is murky but will help if purified.');
+        equipmentChanges.added = [{ name: 'Water bottle (untreated)', quantity: 1, condition: 'good' as const }];
+      } else {
+        immediateEffect = `After searching, you find only a questionable water source. ${environmentFeedback}`;
+        consequences.push('The water quality is poor even for wilderness standards.');
+        equipmentChanges.added = [{ name: 'Water bottle (untreated)', quantity: 1, condition: 'worn' as const }];
+        metricsChange.morale = 2;
+      }
+
+      // Remove empty bottle if present
+      const emptyBottle = state.equipment.find(e => e.name.toLowerCase().includes('water bottle (empty)'));
+      if (emptyBottle) {
+        equipmentChanges.removed = [emptyBottle.name];
+      }
+      break;
+
+    case 'boil-water':
+      const untreatedBottle = state.equipment.find(e => e.name.toLowerCase().includes('water bottle (untreated)'));
+      metricsChange = {
+        energy: -decision.energyCost,
+        fireQuality: -10,
+        morale: 8
+      };
+      immediateEffect = 'You boil the water over the fire. Steam rises as pathogens die.';
+      consequences.push('The water is now safe to drink.');
+      consequences.push('Boiling consumed some of your fire.');
+      if (untreatedBottle) {
+        equipmentChanges.removed = [untreatedBottle.name];
+        equipmentChanges.added = [{ name: 'Water bottle (clean)', quantity: 1, condition: 'good' as const }];
+      }
+      break;
+
+    case 'drink-clean-water':
+      const cleanBottle = state.equipment.find(e => e.name.toLowerCase().includes('water bottle (clean)') ||
+        (e.name.toLowerCase().includes('water bottle') && !e.name.toLowerCase().includes('empty') && !e.name.toLowerCase().includes('untreated')));
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: 40,
+        morale: 8
+      };
+      immediateEffect = 'You drink the clean water. It tastes amazing.';
+      consequences.push('Your hydration increases significantly.');
+      if (cleanBottle) {
+        equipmentChanges.removed = [cleanBottle.name];
+        equipmentChanges.added = [{ name: 'Water bottle (empty)', quantity: 1, condition: 'good' as const }];
+      }
+      break;
+
+    case 'drink-untreated-water':
+      const untreatedDrinkBottle = state.equipment.find(e => e.name.toLowerCase().includes('water bottle (untreated)'));
+      metricsChange = {
+        energy: -decision.energyCost,
+        hydration: 35,
+        morale: 2
+      };
+      immediateEffect = 'You drink the untreated water. It helps, but you worry about contaminants.';
+      consequences.push('Your hydration improves, but there may be consequences...');
+
+      // 40% chance of delayed illness
+      if (roll < 0.4) {
+        const illnessTurn = state.turnNumber + Math.floor(Math.random() * 3) + 2; // 2-4 turns later
+        delayedEffects.push({
+          turn: illnessTurn,
+          effect: 'Stomach cramps grip you. The untreated water was contaminated.',
+          metricsChange: {
+            energy: -20,
+            morale: -15,
+            injurySeverity: 12,
+            hydration: -25
+          }
+        });
+      }
+
+      if (untreatedDrinkBottle) {
+        equipmentChanges.removed = [untreatedDrinkBottle.name];
+        equipmentChanges.added = [{ name: 'Water bottle (empty)', quantity: 1, condition: 'good' as const }];
       }
       break;
 
@@ -1326,29 +1950,6 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       }
       break;
 
-    case 'gather-start-fire':
-      metricsChange = {
-        energy: -decision.energyCost,
-        hydration: -6,
-        cumulativeRisk: 5
-      };
-      if (roll > 0.6) {
-        immediateEffect = 'You gather dry materials and successfully start a fire.';
-        consequences.push('Warmth and safety from the flames.');
-        metricsChange.bodyTemperature = 1.0;
-        metricsChange.morale = 15;
-        metricsChange.cumulativeRisk = -10;
-      } else if (roll > 0.3) {
-        immediateEffect = 'You gather materials but they are too damp to ignite well.';
-        consequences.push('You get a small fire going but it struggles.');
-        metricsChange.bodyTemperature = 0.3;
-        metricsChange.morale = 4;
-      } else {
-        immediateEffect = 'You cannot find suitable dry tinder. The fire will not catch.';
-        consequences.push('Your effort was wasted.');
-        metricsChange.morale = -8;
-      }
-      break;
 
     case 'use-knife-shelter':
       metricsChange = {
@@ -1390,14 +1991,22 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       immediateEffect = 'You take action.';
   }
 
+  // Add feedback for working during hot conditions
+  if (additionalHydrationCost < -4) {
+    consequences.push('Hard work in the heat causes severe dehydration.');
+  } else if (additionalHydrationCost < -2) {
+    consequences.push('The heat makes this work more taxing on your hydration.');
+  }
+
   const envEffects = applyEnvironmentalEffects(state.metrics, state.scenario, state.turnNumber);
   const combinedChanges = {
     energy: (metricsChange.energy || 0) + (envEffects.energy || 0),
     bodyTemperature: (metricsChange.bodyTemperature || 0) + (envEffects.bodyTemperature || 0),
-    hydration: (metricsChange.hydration || 0) + (envEffects.hydration || 0),
+    hydration: (metricsChange.hydration || 0) + (envEffects.hydration || 0) + additionalHydrationCost,
     injurySeverity: (metricsChange.injurySeverity || 0) + (envEffects.injurySeverity || 0),
     morale: (metricsChange.morale || 0) + (envEffects.morale || 0),
     shelter: (metricsChange.shelter || 0) + (envEffects.shelter || 0),
+    fireQuality: (metricsChange.fireQuality || 0) + (envEffects.fireQuality || 0),
     cumulativeRisk: (metricsChange.cumulativeRisk || 0) + (envEffects.cumulativeRisk || 0)
   };
 
@@ -1419,10 +2028,12 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
     outcome.environmentChange = environmentChange;
   }
 
-  const signalingActions = ['use-whistle', 'use-mirror', 'use-flashlight-signal', 'signal', 'signal-water', 'signal-urban'];
+  const signalingActions = ['use-whistle', 'use-mirror', 'use-flashlight-signal', 'signal', 'signal-water', 'signal-urban', 'signal-fire'];
   if (signalingActions.includes(decision.id)) {
     outcome.wasSignalAttempt = true;
-    if (roll > 0.6 || (state.metrics.signalEffectiveness > 60 && roll > 0.4)) {
+    // Signal fire has higher success rate due to visibility
+    const signalFireBonus = decision.id === 'signal-fire' ? 0.1 : 0;
+    if (roll > (0.6 - signalFireBonus) || (state.metrics.signalEffectiveness > 60 && roll > (0.4 - signalFireBonus))) {
       outcome.wasSuccessfulSignal = true;
     }
   }
@@ -1448,6 +2059,15 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       outcome.consequences.push(`⚠️ Consider: ${cautionaryPrinciple}`);
     }
   }
+
+  // Generate detailed consequence explanation
+  outcome.explanation = generateConsequenceExplanation(
+    decision,
+    state,
+    metricsChange,
+    immediateEffect,
+    outcome.decisionQuality
+  );
 
   return outcome;
 }

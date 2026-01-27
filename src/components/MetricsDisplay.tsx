@@ -157,6 +157,24 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
         </div>
       </div>
 
+      <div className="pt-3 border-t border-gray-700">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-xl">🔥</span>
+          <div className="text-base text-gray-400">Fire</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex-1 h-3 bg-gray-800 rounded-full overflow-hidden">
+            <div
+              className={`h-full transition-all duration-500 ${getFireColor(metrics.fireQuality)}`}
+              style={{ width: `${Math.max(0, Math.min(100, metrics.fireQuality))}%` }}
+            />
+          </div>
+          <span className={`text-lg font-mono ${getFireTextColor(metrics.fireQuality)}`}>
+            {getFireLabel(metrics.fireQuality)}
+          </span>
+        </div>
+      </div>
+
       {equipment.length > 0 && (
         <div className="pt-3 border-t border-gray-700">
           <div className="flex items-center gap-2 mb-2">
@@ -378,4 +396,25 @@ function getTimePeriodProgress(time: TimeOfDay): number {
     night: 100
   };
   return progress[time];
+}
+
+function getFireColor(value: number): string {
+  if (value > 75) return 'bg-red-500';      // Strong fire
+  if (value > 50) return 'bg-red-600';      // Burning
+  if (value > 25) return 'bg-orange-600';   // Smoldering
+  return 'bg-gray-600';                     // Extinguished
+}
+
+function getFireTextColor(value: number): string {
+  if (value > 75) return 'text-red-400';    // Strong fire
+  if (value > 50) return 'text-red-500';    // Burning
+  if (value > 25) return 'text-orange-400'; // Smoldering
+  return 'text-gray-500';                   // Extinguished
+}
+
+function getFireLabel(value: number): string {
+  if (value > 75) return 'Strong';
+  if (value > 50) return 'Burning';
+  if (value > 25) return 'Smoldering';
+  return 'Out';
 }

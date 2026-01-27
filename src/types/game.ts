@@ -35,6 +35,7 @@ export interface PlayerMetrics {
   injurySeverity: number;
   morale: number;
   shelter: number;
+  fireQuality: number;
   signalEffectiveness: number;
   cumulativeRisk: number;
   survivalProbability: number;
@@ -46,6 +47,70 @@ export interface Decision {
   energyCost: number;
   riskLevel: number;
   timeRequired: number;
+}
+
+// Detailed breakdown for a single stat change
+export interface StatChangeReason {
+  amount: number;
+  reason: string;
+  category: 'base' | 'environmental' | 'condition' | 'cascade';
+}
+
+// Environmental context at time of decision
+export interface EnvironmentalContext {
+  weather: Weather;
+  temperature: number;
+  windSpeed: number;
+  visibility: 'clear' | 'reduced' | 'poor' | 'whiteout';
+  timeOfDay: TimeOfDay;
+  shelterQuality: number;
+  challengeMultiplier: number;
+}
+
+// Player condition factors affecting outcome
+export interface PlayerConditionFactors {
+  energyLevel: number;
+  hydrationLevel: number;
+  bodyTemp: number;
+  injuryStatus: number;
+  energyDeficiency: number; // How far below recommended
+  conditionMultiplier: number; // Overall penalty/bonus
+}
+
+// Detailed breakdown for each stat change
+export interface MetricBreakdown {
+  finalChange: number;
+  reasons: StatChangeReason[];
+  calculation?: string; // Optional formula explanation
+}
+
+// Complete consequence explanation
+export interface ConsequenceExplanation {
+  // Tier 1: Quick summary
+  summary: string;
+  riskAssessment: 'safe' | 'manageable' | 'risky' | 'dangerous' | 'critical';
+
+  // Tier 2: Detailed narrative
+  detailedNarrative: string;
+  environmentalFactors: EnvironmentalContext;
+  playerFactors: PlayerConditionFactors;
+  outcomeType: 'success' | 'partial-success' | 'failure' | 'critical-failure' | 'cascade-failure';
+
+  // Tier 3: Mechanical breakdown
+  metricBreakdowns: {
+    energy?: MetricBreakdown;
+    hydration?: MetricBreakdown;
+    bodyTemperature?: MetricBreakdown;
+    morale?: MetricBreakdown;
+    shelter?: MetricBreakdown;
+    injurySeverity?: MetricBreakdown;
+    cumulativeRisk?: MetricBreakdown;
+  };
+
+  // Learning & recommendations
+  lessonLearned?: string;
+  recommendations?: string[];
+  survivalPrinciple?: string;
 }
 
 export interface DecisionOutcome {
@@ -69,6 +134,9 @@ export interface DecisionOutcome {
   wasNavigationSuccess?: boolean;
   decisionQuality?: 'excellent' | 'good' | 'poor' | 'critical-error';
   survivalPrincipleAlignment?: string;
+
+  // NEW: Detailed consequence explanation
+  explanation?: ConsequenceExplanation;
 }
 
 export interface SurvivalGuide {
