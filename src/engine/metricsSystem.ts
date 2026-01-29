@@ -1,5 +1,6 @@
-import type { PlayerMetrics, Scenario, GameState } from '../types/game';
+import type { PlayerMetrics, Scenario, GameState, MetricThresholdCrossing, CausalityChain } from '../types/game';
 import { calculateWindEffect } from './windSystem';
+import { trackThresholdCrossing, buildCausalityChain } from './causalityTracker';
 
 export function initializeMetrics(scenario: Scenario): PlayerMetrics {
   let energy = 100;
@@ -79,8 +80,14 @@ export function initializeMetrics(scenario: Scenario): PlayerMetrics {
 export function updateMetrics(
   current: PlayerMetrics,
   changes: Partial<PlayerMetrics>,
-  scenario: Scenario
-): PlayerMetrics {
+  scenario: Scenario,
+  turn?: number,
+  decisionText?: string,
+  decisionId?: string
+): {
+  metrics: PlayerMetrics;
+  thresholdCrossing: MetricThresholdCrossing | null;
+} {
   const updated = {
     energy: clamp(current.energy + (changes.energy || 0), 0, 100),
     bodyTemperature: clamp(current.bodyTemperature + (changes.bodyTemperature || 0), 32, 42),
@@ -97,7 +104,29 @@ export function updateMetrics(
   updated.signalEffectiveness = calculateSignalEffectiveness(scenario, updated.morale);
   updated.survivalProbability = calculateSurvivalProbability(updated, scenario);
 
-  return updated;
+  // Track threshold crossings if turn info provided
+  let thresholdCrossing: MetricThresholdCrossing | null = null;
+  if (turn !== undefined && decisionText && decisionId) {
+    // Check critical metrics for threshold crossings
+    const criticalMetrics: Array<keyof PlayerMetrics> = ['energy', 'hydration', 'bodyTemperature', 'injurySeverity'];
+
+    for (const metric of criticalMetrics) {
+      const crossing = trackThresholdCrossing(
+        metric,
+        current[metric],
+        updated[metric],
+        turn,
+        decisionText,
+        decisionId
+      );
+      if (crossing) {
+        thresholdCrossing = crossing;
+        break; // Return first threshold crossing found
+      }
+    }
+  }
+
+  return { metrics: updated, thresholdCrossing };
 }
 
 export function applyEnvironmentalEffects(
@@ -322,47 +351,102 @@ export function checkEndConditions(state: GameState): {
   ended: boolean;
   outcome?: 'survived' | 'barely_survived' | 'died';
   reason?: string;
+  causalityChain?: CausalityChain;
 } {
   const m = state.metrics;
   const successfulSignals = state.successfulSignals || 0;
 
   if (m.bodyTemperature <= 31.5 || m.bodyTemperature >= 41.5) {
+    // Find the fatal temperature crossing
+    const crossings = state.metricThresholdCrossings || [];
+    const fatalCrossing = crossings
+      .filter(c => c.metric === 'bodyTemperature' && c.crossingType === 'fatal')
+      .sort((a, b) => b.turn - a.turn)[0];
+
+    let causalityChain: CausalityChain | undefined;
+    if (fatalCrossing) {
+      causalityChain = buildCausalityChain(state, fatalCrossing);
+    }
+
     return {
       ended: true,
       outcome: 'died',
-      reason: m.bodyTemperature <= 31.5 ? 'Death from severe hypothermia' : 'Death from hyperthermia'
+      reason: m.bodyTemperature <= 31.5 ? 'Death from severe hypothermia' : 'Death from hyperthermia',
+      causalityChain
     };
   }
 
   if (m.energy <= 5 && m.hydration <= 10) {
+    const crossings = state.metricThresholdCrossings || [];
+    const energyCrossing = crossings.filter(c => c.metric === 'energy' && c.crossingType === 'fatal').sort((a, b) => b.turn - a.turn)[0];
+    const hydrationCrossing = crossings.filter(c => c.metric === 'hydration' && c.crossingType === 'fatal').sort((a, b) => b.turn - a.turn)[0];
+
+    // Use whichever crossed first as root cause
+    const fatalCrossing = energyCrossing && hydrationCrossing
+      ? (energyCrossing.turn < hydrationCrossing.turn ? energyCrossing : hydrationCrossing)
+      : (energyCrossing || hydrationCrossing);
+
+    let causalityChain: CausalityChain | undefined;
+    if (fatalCrossing) {
+      causalityChain = buildCausalityChain(state, fatalCrossing);
+    }
+
     return {
       ended: true,
       outcome: 'died',
-      reason: 'You collapsed from combined exhaustion and dehydration. Your body shut down.'
+      reason: 'You collapsed from combined exhaustion and dehydration. Your body shut down.',
+      causalityChain
     };
   }
 
   if (m.energy <= 3) {
+    const crossings = state.metricThresholdCrossings || [];
+    const fatalCrossing = crossings.filter(c => c.metric === 'energy' && c.crossingType === 'fatal').sort((a, b) => b.turn - a.turn)[0];
+
+    let causalityChain: CausalityChain | undefined;
+    if (fatalCrossing) {
+      causalityChain = buildCausalityChain(state, fatalCrossing);
+    }
+
     return {
       ended: true,
       outcome: 'died',
-      reason: 'You collapsed from complete energy depletion. Fatal exhaustion.'
+      reason: 'You collapsed from complete energy depletion. Fatal exhaustion.',
+      causalityChain
     };
   }
 
   if (m.hydration <= 5) {
+    const crossings = state.metricThresholdCrossings || [];
+    const fatalCrossing = crossings.filter(c => c.metric === 'hydration' && c.crossingType === 'fatal').sort((a, b) => b.turn - a.turn)[0];
+
+    let causalityChain: CausalityChain | undefined;
+    if (fatalCrossing) {
+      causalityChain = buildCausalityChain(state, fatalCrossing);
+    }
+
     return {
       ended: true,
       outcome: 'died',
-      reason: 'Your organs failed due to severe dehydration. You did not survive.'
+      reason: 'Your organs failed due to severe dehydration. You did not survive.',
+      causalityChain
     };
   }
 
   if (m.injurySeverity >= 90) {
+    const crossings = state.metricThresholdCrossings || [];
+    const fatalCrossing = crossings.filter(c => c.metric === 'injurySeverity' && c.crossingType === 'fatal').sort((a, b) => b.turn - a.turn)[0];
+
+    let causalityChain: CausalityChain | undefined;
+    if (fatalCrossing) {
+      causalityChain = buildCausalityChain(state, fatalCrossing);
+    }
+
     return {
       ended: true,
       outcome: 'died',
-      reason: 'Untreated injuries led to fatal complications. You succumbed to your wounds.'
+      reason: 'Untreated injuries led to fatal complications. You succumbed to your wounds.',
+      causalityChain
     };
   }
 
@@ -430,10 +514,25 @@ export function checkEndConditions(state: GameState): {
   }
 
   if (m.survivalProbability < 5 && state.turnNumber > 5) {
+    // Find the worst metric that led to low survival probability
+    const crossings = state.metricThresholdCrossings || [];
+    const criticalCrossings = crossings.filter(c => c.crossingType === 'critical' || c.crossingType === 'fatal').sort((a, b) => a.turn - b.turn);
+
+    let causalityChain: CausalityChain | undefined;
+    if (criticalCrossings.length > 0) {
+      // Use first critical crossing as root cause
+      const mockFatalCrossing: MetricThresholdCrossing = {
+        ...criticalCrossings[0],
+        crossingType: 'fatal'
+      };
+      causalityChain = buildCausalityChain(state, mockFatalCrossing);
+    }
+
     return {
       ended: true,
       outcome: 'died',
-      reason: 'Multiple critical failures compounded. Your condition deteriorated beyond recovery.'
+      reason: 'Multiple critical failures compounded. Your condition deteriorated beyond recovery.',
+      causalityChain
     };
   }
 

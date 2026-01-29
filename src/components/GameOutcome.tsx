@@ -3,6 +3,7 @@ import { AlertTriangle, Check, X, TrendingUp, TrendingDown, Award, BookOpen, Clo
 import { getCategories, getPrinciplesByCategory } from '../engine/survivalPrinciplesService';
 import type { PrincipleCategory } from '../engine/survivalPrinciplesService';
 import { getFailureFact } from '../data/survivalFacts';
+import DecisionTimeline from './DecisionTimeline';
 
 interface GameOutcomeProps {
   state: GameState;
@@ -315,19 +316,19 @@ export function GameOutcome({ state, onNewGame }: GameOutcomeProps) {
     survived: {
       icon: Check,
       color: 'text-green-400',
-      bgColor: 'bg-green-900/20',
+      bgColor: 'bg-green-900/90',
       borderColor: 'border-green-800'
     },
     barely_survived: {
       icon: AlertTriangle,
       color: 'text-yellow-400',
-      bgColor: 'bg-yellow-900/20',
+      bgColor: 'bg-yellow-900/90',
       borderColor: 'border-yellow-800'
     },
     died: {
       icon: X,
       color: 'text-red-400',
-      bgColor: 'bg-red-900/20',
+      bgColor: 'bg-red-900/90',
       borderColor: 'border-red-800'
     }
   };
@@ -358,12 +359,12 @@ export function GameOutcome({ state, onNewGame }: GameOutcomeProps) {
           <Icon className={`w-8 h-8 ${config.color}`} />
           <h2 className={`text-2xl font-light ${config.color}`}>{narrative.title}</h2>
         </div>
-        <p className="text-gray-300 leading-relaxed mb-4">{narrative.description}</p>
+        <p className="text-white leading-relaxed mb-4">{narrative.description}</p>
 
         {state.lessons && state.lessons.length > 0 && (
           <div className="space-y-2 pt-3 border-t border-gray-700">
             {state.lessons.map((lesson, index) => (
-              <p key={index} className="text-sm text-gray-400 leading-relaxed">
+              <p key={index} className="text-sm text-gray-100 leading-relaxed">
                 {lesson}
               </p>
             ))}
@@ -372,7 +373,7 @@ export function GameOutcome({ state, onNewGame }: GameOutcomeProps) {
       </div>
 
       {/* Survival Rating */}
-      <div className="p-5 bg-gradient-to-br from-purple-900/20 to-blue-900/20 rounded-lg border border-purple-800/50">
+      <div className="p-5 bg-gradient-to-br from-purple-900/90 to-blue-900/90 rounded-lg border border-purple-800">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <Award className="w-6 h-6 text-purple-400" />
@@ -392,7 +393,7 @@ export function GameOutcome({ state, onNewGame }: GameOutcomeProps) {
 
       {/* Key Decision Points */}
       {keyDecisions.length > 0 && (
-        <div className="p-5 bg-gray-800/50 rounded-lg border border-gray-700">
+        <div className="p-5 bg-gray-800/90 rounded-lg border border-gray-700">
           <div className="flex items-center gap-2 mb-4">
             <Clock className="w-5 h-5 text-blue-400" />
             <h3 className="text-lg font-medium text-blue-400">Key Decision Points</h3>
@@ -428,9 +429,37 @@ export function GameOutcome({ state, onNewGame }: GameOutcomeProps) {
         </div>
       )}
 
+      {/* CAUSALITY ANALYSIS - Only for deaths with causality chain */}
+      {state.outcome === 'died' && state.causalityChain && (
+        <div className="p-5 bg-gray-800/90 rounded-lg border border-red-700">
+          <div className="flex items-center gap-2 mb-4">
+            <Skull className="w-5 h-5 text-red-400" />
+            <h3 className="text-lg font-medium text-red-400">What Killed You: Root Cause Analysis</h3>
+          </div>
+
+          <div className="mb-4 p-4 bg-red-900/90 rounded-lg border border-red-800">
+            <div className="text-sm font-semibold text-red-300 mb-2">
+              The Critical Mistake (Turn {state.causalityChain.rootCauseDecision.turn})
+            </div>
+            <div className="text-base text-white mb-2">
+              "{state.causalityChain.rootCauseDecision.decisionText}"
+            </div>
+            <div className="text-sm text-gray-100">
+              {state.causalityChain.rootCauseDecision.immediateEffect}
+            </div>
+          </div>
+
+          <DecisionTimeline
+            state={state}
+            highlightRootCauseTurn={state.causalityChain.rootCauseDecision.turn}
+            highlightPointOfNoReturn={state.causalityChain.fatalThreshold.turn}
+          />
+        </div>
+      )}
+
       {/* SURVIVAL SCIENCE SECTION - Only for deaths */}
       {survivalFact && (
-        <div className="relative overflow-hidden rounded-lg border-2 border-red-600/50 bg-gradient-to-br from-red-900/30 via-gray-900 to-gray-900 shadow-2xl">
+        <div className="relative overflow-hidden rounded-lg border-2 border-red-600 bg-gradient-to-br from-red-900/90 via-gray-900 to-gray-900 shadow-2xl">
           <div className="absolute top-0 right-0 w-64 h-64 bg-red-500/5 rounded-full blur-3xl" />
 
           <div className="relative p-6">
@@ -448,13 +477,13 @@ export function GameOutcome({ state, onNewGame }: GameOutcomeProps) {
               <p className="text-2xl font-mono text-gray-100 mb-1">
                 {daysSurvived > 0 ? `${daysSurvived}d ${remainingHours}h` : `${remainingHours} hours`}
               </p>
-              <p className="text-sm text-gray-400 italic">
+              <p className="text-sm text-gray-100 italic">
                 {survivalFact.ruleOfThrees}
               </p>
             </div>
 
             {/* The Science Section */}
-            <div className="mb-6 p-5 bg-gradient-to-br from-blue-900/20 to-purple-900/20 rounded-lg border border-blue-800/40">
+            <div className="mb-6 p-5 bg-gradient-to-br from-blue-900/90 to-purple-900/90 rounded-lg border border-blue-800">
               <div className="flex items-center gap-2 mb-4">
                 <BookOpen className="w-5 h-5 text-blue-400" />
                 <h4 className="text-base font-bold text-blue-400">THE SCIENCE: {survivalFact.title}</h4>
@@ -465,14 +494,14 @@ export function GameOutcome({ state, onNewGame }: GameOutcomeProps) {
                     <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
                       <span className="text-xs font-bold text-blue-300">{index + 1}</span>
                     </div>
-                    <p className="text-sm text-gray-200 leading-relaxed">{fact}</p>
+                    <p className="text-sm text-white leading-relaxed">{fact}</p>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* What You Should Have Done */}
-            <div className="p-5 bg-green-900/20 rounded-lg border border-green-800/40">
+            <div className="p-5 bg-green-900/90 rounded-lg border border-green-800">
               <h4 className="text-sm font-bold text-green-400 mb-3 flex items-center gap-2">
                 <span>💡</span>
                 WHAT WOULD HAVE SAVED YOU
@@ -481,7 +510,7 @@ export function GameOutcome({ state, onNewGame }: GameOutcomeProps) {
                 {survivalFact.prevention.map((tip, index) => (
                   <div key={index} className="flex items-start gap-2">
                     <span className="text-green-400 text-lg leading-none">▸</span>
-                    <p className="text-sm text-gray-200 leading-relaxed">{tip}</p>
+                    <p className="text-sm text-white leading-relaxed">{tip}</p>
                   </div>
                 ))}
               </div>
@@ -493,36 +522,36 @@ export function GameOutcome({ state, onNewGame }: GameOutcomeProps) {
       {/* END SURVIVAL SCIENCE SECTION */}
 
       <div className="grid grid-cols-3 gap-4">
-        <div className="p-4 bg-gray-800 rounded border border-gray-700">
-          <div className="text-sm text-gray-400 mb-1">Turns Survived</div>
-          <div className="text-2xl font-mono text-gray-200">{state.turnNumber - 1}</div>
+        <div className="p-4 bg-gray-800/90 rounded border border-gray-700">
+          <div className="text-sm text-gray-100 mb-1">Turns Survived</div>
+          <div className="text-2xl font-mono text-white">{state.turnNumber - 1}</div>
         </div>
-        <div className="p-4 bg-gray-800 rounded border border-gray-700">
-          <div className="text-sm text-gray-400 mb-1">Signals Sent</div>
-          <div className="text-2xl font-mono text-gray-200">{successfulSignals}/{signalAttempts}</div>
+        <div className="p-4 bg-gray-800/90 rounded border border-gray-700">
+          <div className="text-sm text-gray-100 mb-1">Signals Sent</div>
+          <div className="text-2xl font-mono text-white">{successfulSignals}/{signalAttempts}</div>
         </div>
-        <div className="p-4 bg-gray-800 rounded border border-gray-700">
-          <div className="text-sm text-gray-400 mb-1">Survival Score</div>
-          <div className="text-2xl font-mono text-gray-200">{Math.round(state.metrics.survivalProbability)}</div>
+        <div className="p-4 bg-gray-800/90 rounded border border-gray-700">
+          <div className="text-sm text-gray-100 mb-1">Survival Score</div>
+          <div className="text-2xl font-mono text-white">{Math.round(state.metrics.survivalProbability)}</div>
         </div>
       </div>
 
       {goodDecisions.length > 0 && (
-        <div className="p-5 bg-green-900/10 rounded-lg border border-green-800/50">
+        <div className="p-5 bg-green-900/90 rounded-lg border border-green-800">
           <div className="flex items-center gap-2 mb-4">
             <TrendingUp className="w-5 h-5 text-green-400" />
             <h3 className="text-lg font-medium text-green-400">Good Decisions</h3>
-            <span className="text-sm text-green-500 ml-auto">{goodDecisions.length} correct choices</span>
+            <span className="text-sm text-green-300 ml-auto">{goodDecisions.length} correct choices</span>
           </div>
           <div className="space-y-3 max-h-64 overflow-y-auto">
             {goodDecisions.map((decision, index) => (
-              <div key={index} className="p-3 bg-gray-800/50 rounded border border-gray-700">
+              <div key={index} className="p-3 bg-gray-800/90 rounded border border-gray-700">
                 <div className="flex items-start gap-3">
-                  <div className="text-xs text-gray-500 font-mono mt-0.5 flex-shrink-0">
+                  <div className="text-xs text-gray-300 font-mono mt-0.5 flex-shrink-0">
                     Turn {decision.turn}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-200 mb-1">{decision.description}</p>
+                    <p className="text-sm text-white mb-1">{decision.description}</p>
                     <p className="text-xs text-green-400">{decision.principle}</p>
                   </div>
                 </div>
@@ -533,21 +562,21 @@ export function GameOutcome({ state, onNewGame }: GameOutcomeProps) {
       )}
 
       {poorDecisions.length > 0 && (
-        <div className="p-5 bg-red-900/10 rounded-lg border border-red-800/50">
+        <div className="p-5 bg-red-900/90 rounded-lg border border-red-800">
           <div className="flex items-center gap-2 mb-4">
             <TrendingDown className="w-5 h-5 text-red-400" />
             <h3 className="text-lg font-medium text-red-400">Mistakes Made</h3>
-            <span className="text-sm text-red-500 ml-auto">{poorDecisions.length} poor choices</span>
+            <span className="text-sm text-red-300 ml-auto">{poorDecisions.length} poor choices</span>
           </div>
           <div className="space-y-3 max-h-64 overflow-y-auto">
             {poorDecisions.map((decision, index) => (
-              <div key={index} className="p-3 bg-gray-800/50 rounded border border-gray-700">
+              <div key={index} className="p-3 bg-gray-800/90 rounded border border-gray-700">
                 <div className="flex items-start gap-3">
-                  <div className="text-xs text-gray-500 font-mono mt-0.5 flex-shrink-0">
+                  <div className="text-xs text-gray-300 font-mono mt-0.5 flex-shrink-0">
                     Turn {decision.turn}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-200 mb-1">{decision.description}</p>
+                    <p className="text-sm text-white mb-1">{decision.description}</p>
                     <p className="text-xs text-red-400">{decision.principle}</p>
                   </div>
                 </div>
