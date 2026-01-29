@@ -1,3 +1,6 @@
+/* Dynamic background layers */
+@import './styles/backgroundLayers.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

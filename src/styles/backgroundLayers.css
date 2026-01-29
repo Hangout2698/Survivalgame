@@ -1,0 +1,199 @@
+/**
+ * Dynamic Environment Background - CSS Animations and Layer Styles
+ * GPU-accelerated animations with reduced motion support
+ */
+
+/* Base layer utilities */
+.background-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  will-change: opacity, filter;
+  transform: translateZ(0); /* GPU acceleration */
+}
+
+.background-layer-transition {
+  transition: opacity 1.5s ease-in-out, filter 1.5s ease-in-out;
+}
+
+/* Environment gradient base (Layer 1) */
+.environment-gradient {
+  z-index: 0;
+  transition: background 1.5s ease-in-out;
+}
+
+/* Time of day overlay (Layer 2) */
+.time-overlay {
+  z-index: 1;
+  transition: filter 2s ease-in-out;
+}
+
+/* Weather effects (Layer 3) */
+.weather-overlay {
+  z-index: 2;
+  transition: opacity 1s ease-in-out, background 1s ease-in-out;
+}
+
+/* Shelter structure (Layer 4) */
+.shelter-overlay {
+  z-index: 3;
+  transition: opacity 2s ease-in-out;
+}
+
+/* Hazard filters (Layer 5) */
+.hazard-overlay {
+  z-index: 4;
+  transition: filter 1s ease-in-out;
+}
+
+/* Progression effects (noise/vignette) */
+.progression-overlay {
+  z-index: 5;
+  transition: opacity 3s ease-in-out;
+  background: radial-gradient(ellipse at center, transparent 0%, rgba(0, 0, 0, 0.3) 100%);
+}
+
+/* Weather animations - only render if user doesn't prefer reduced motion */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes rain-fall {
+    0% {
+      background-position: 0 0;
+    }
+    100% {
+      background-position: 10px 100vh;
+    }
+  }
+
+  @keyframes wind-blow {
+    0% {
+      transform: translateX(0) translateZ(0);
+    }
+    50% {
+      transform: translateX(20px) translateZ(0);
+    }
+    100% {
+      transform: translateX(0) translateZ(0);
+    }
+  }
+
+  @keyframes snow-fall {
+    0% {
+      background-position: 0 0, 0 0;
+    }
+    100% {
+      background-position: 30px 100vh, -30px 100vh;
+    }
+  }
+
+  @keyframes heat-shimmer {
+    0%, 100% {
+      filter: blur(0px);
+      transform: translateY(0) translateZ(0);
+    }
+    50% {
+      filter: blur(0.5px);
+      transform: translateY(2px) translateZ(0);
+    }
+  }
+
+  @keyframes storm-pulse {
+    0%, 100% {
+      opacity: 0.7;
+    }
+    50% {
+      opacity: 0.85;
+    }
+  }
+
+  /* Apply animations to weather overlay */
+  .weather-overlay[data-animation="rain-fall"] {
+    animation: rain-fall 1s linear infinite;
+  }
+
+  .weather-overlay[data-animation="wind-blow"] {
+    animation: wind-blow 3s ease-in-out infinite;
+  }
+
+  .weather-overlay[data-animation="snow-fall"] {
+    animation: snow-fall 8s linear infinite;
+  }
+
+  .weather-overlay[data-animation="heat-shimmer"] {
+    animation: heat-shimmer 2s ease-in-out infinite;
+  }
+
+  .weather-overlay[data-animation="storm-pulse"] {
+    animation: storm-pulse 3s ease-in-out infinite;
+  }
+}
+
+/* Mobile optimizations - reduce expensive effects */
+@media (max-width: 768px) {
+  .weather-overlay[data-animation="rain-fall"] {
+    animation-duration: 1.5s; /* Slower for performance */
+  }
+
+  .weather-overlay[data-animation="snow-fall"] {
+    animation-duration: 12s; /* Slower for performance */
+  }
+
+  /* Disable blur on mobile (expensive) */
+  .hazard-overlay {
+    filter: none !important;
+  }
+}
+
+/* Shelter SVG shapes */
+.shelter-silhouette {
+  position: absolute;
+  width: 200px;
+  height: 150px;
+  opacity: inherit;
+  transition: opacity 2s ease-in-out;
+}
+
+.shelter-position-bottom-right {
+  bottom: 60px;
+  right: 40px;
+}
+
+.shelter-position-bottom-left {
+  bottom: 60px;
+  left: 40px;
+}
+
+.shelter-position-bottom-center {
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%) translateZ(0);
+}
+
+/* Noise texture overlay */
+.noise-texture {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.1'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 200px 200px;
+}
+
+/* Reduced motion: disable all animations */
+@media (prefers-reduced-motion: reduce) {
+  .background-layer-transition,
+  .environment-gradient,
+  .time-overlay,
+  .weather-overlay,
+  .shelter-overlay,
+  .hazard-overlay,
+  .progression-overlay,
+  .shelter-silhouette {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .weather-overlay,
+  .hazard-overlay {
+    opacity: 0.3 !important; /* Reduce overlays for better contrast */
+  }
+}

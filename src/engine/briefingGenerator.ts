@@ -553,7 +553,8 @@ export function generateBriefing(scenario: Scenario): string {
   const timeAndLight = getTimeAndLight(scenario.timeOfDay);
   const weather = getWeatherDescription(scenario.weather, scenario.environment, scenario.temperature, backstory.text);
   const location = getLocationAndTerrain(scenario.environment);
-  const equipment = getEquipmentSummary(scenario, backstory);
+  // Equipment summary not currently included in briefing, but function called for future use
+  getEquipmentSummary(scenario, backstory);
   const hazards = getImmediateHazards(scenario, backstory);
   const rescue = getRescueSituation(scenario.environment);
   const stayVsGo = getStayVsGoAnalysis(scenario.environment);

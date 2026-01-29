@@ -15,7 +15,7 @@ import { InventoryTray } from './InventoryTray';
 import { TutorialScenarioModal } from './TutorialScenarioModal';
 import { DecisionList } from './DecisionList';
 import { GameOutcome } from './GameOutcome';
-import { EnvironmentBackground } from './EnvironmentBackground';
+import { DynamicEnvironmentBackground } from './DynamicEnvironmentBackground';
 import { DecisionIllustration } from './DecisionIllustration';
 import { Notification } from './Notification';
 import { ConsequenceExplanationPanel } from './ConsequenceExplanationPanel';
@@ -345,7 +345,15 @@ export function Game() {
   if (gameState.status === 'ended' && showOutcome) {
     return (
       <div className="min-h-screen bg-gray-950 text-gray-100 p-4 relative">
-        <EnvironmentBackground environment={gameState.currentEnvironment} />
+        <DynamicEnvironmentBackground
+          environment={gameState.currentEnvironment}
+          timeOfDay={gameState.currentTimeOfDay}
+          weather={gameState.scenario.weather}
+          temperature={gameState.scenario.temperature}
+          windSpeed={gameState.scenario.windSpeed}
+          metrics={gameState.metrics}
+          turnNumber={gameState.turnNumber}
+        />
         <div className="max-w-3xl mx-auto py-8 relative z-10">
           <div className="mb-8 text-center">
             <h1 className="text-3xl font-light text-gray-100 mb-2">Survival</h1>
@@ -359,7 +367,15 @@ export function Game() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 relative">
-      <EnvironmentBackground environment={gameState.currentEnvironment} />
+      <DynamicEnvironmentBackground
+        environment={gameState.currentEnvironment}
+        timeOfDay={gameState.currentTimeOfDay}
+        weather={gameState.scenario.weather}
+        temperature={gameState.scenario.temperature}
+        windSpeed={gameState.scenario.windSpeed}
+        metrics={gameState.metrics}
+        turnNumber={gameState.turnNumber}
+      />
 
       {/* Danger Vignette - Visual warning effect */}
       <DangerVignette stats={getPlayerStats(gameState)} />

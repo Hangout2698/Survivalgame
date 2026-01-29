@@ -264,15 +264,15 @@ function StatBar({
       `}
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xl">{icon}</span>
-          <h3 className="text-sm font-bold text-gray-300 tracking-wide">{label}</h3>
+      <div className="flex items-center justify-between mb-2 gap-2">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <span className="text-xl flex-shrink-0">{icon}</span>
+          <h3 className="text-sm font-bold text-gray-300 tracking-wide truncate">{label}</h3>
           {showThresholds && (
             <button
               onMouseEnter={() => setShowTooltip(true)}
               onMouseLeave={() => setShowTooltip(false)}
-              className="relative"
+              className="relative flex-shrink-0"
             >
               <Info className="w-3 h-3 text-gray-500 hover:text-gray-300" />
               {showTooltip && thresholds && (
@@ -283,8 +283,8 @@ function StatBar({
             </button>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-2xl font-mono font-bold text-gray-100">
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <span className="text-lg sm:text-xl font-mono font-bold text-gray-100 whitespace-nowrap">
             {displayValue || Math.round(value)}
             {!displayValue && `/${max}`}
           </span>
