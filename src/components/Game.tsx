@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import type { GameState, Decision } from '../types/game';
+import type { GameState, Decision, PlayerMetrics, Scenario } from '../types/game';
 import { createNewGame, makeDecision, getAvailableDecisions } from '../engine/gameController';
 import { generateBriefing, generateConciseBrief } from '../engine/briefingGenerator';
 import { getEnvironmentTips } from '../engine/survivalPrinciplesService';
+import { generateScenario } from '../engine/scenarioGenerator';
 import { useInventory } from '../contexts/InventoryContext';
 import { getTriggeredTutorialScenario } from '../data/tutorialScenarios';
 import { SurvivalStatusDashboard } from './SurvivalStatusDashboard';
@@ -26,8 +27,10 @@ import { CloudSnow } from 'lucide-react';
 
 export function Game() {
   const { resetInventory } = useInventory();
+  const [scenario, setScenario] = useState<Scenario | null>(null);
   const [loadoutComplete, setLoadoutComplete] = useState(false);
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const [gameLoadError, setGameLoadError] = useState<string | null>(null);
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [recentOutcome, setRecentOutcome] = useState<string>('');
   const [showOutcome, setShowOutcome] = useState(false);
@@ -43,6 +46,52 @@ export function Game() {
     category: PrincipleCategory;
   } | null>(null);
   const [showMobileStatus, setShowMobileStatus] = useState(false);
+  const [showPulse, setShowPulse] = useState(false);
+  const [touchStartY, setTouchStartY] = useState<number>(0);
+  const [touchStartTime, setTouchStartTime] = useState<number>(0);
+
+  // Generate scenario on component mount (before loadout selection)
+  useEffect(() => {
+    if (!scenario) {
+      setScenario(generateScenario());
+    }
+  }, [scenario]);
+
+  // Check if this is the first time viewing the status button (per session)
+  useEffect(() => {
+    const hasSeenStatusButton = sessionStorage.getItem('hasSeenStatusButton');
+    if (!hasSeenStatusButton) {
+      setShowPulse(true);
+      // Stop pulsing after 5 seconds or when button is clicked
+      setTimeout(() => setShowPulse(false), 5000);
+    }
+  }, []);
+
+  // Mark status button as seen when clicked
+  const handleStatusButtonClick = () => {
+    sessionStorage.setItem('hasSeenStatusButton', 'true');
+    setShowPulse(false);
+    setShowMobileStatus(true);
+  };
+
+  // Swipe gesture handlers for drawer
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartY(e.touches[0].clientY);
+    setTouchStartTime(Date.now());
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const touchEndY = e.changedTouches[0].clientY;
+    const touchEndTime = Date.now();
+    const distance = touchEndY - touchStartY;
+    const duration = touchEndTime - touchStartTime;
+    const velocity = Math.abs(distance) / duration;
+
+    // Close drawer if swiped down more than 100px or velocity > 0.5
+    if (distance > 100 || velocity > 0.5) {
+      setShowMobileStatus(false);
+    }
+  };
 
   // Convert game metrics to simplified PlayerStats for HUD
   const getPlayerStats = (state: GameState | null): PlayerStats => {
@@ -65,10 +114,15 @@ export function Game() {
 
   useEffect(() => {
     // Only create game after loadout is complete
-    if (loadoutComplete && !gameState) {
-      createNewGame().then(setGameState);
+    if (loadoutComplete && !gameState && !gameLoadError && scenario) {
+      createNewGame(scenario)
+        .then(setGameState)
+        .catch((error) => {
+          console.error('Failed to create game:', error);
+          setGameLoadError('Failed to initialize game. Please try again.');
+        });
     }
-  }, [loadoutComplete, gameState]);
+  }, [loadoutComplete, gameState, gameLoadError, scenario]);
   useEffect(() => {
     if (gameState && gameState.status === 'active') {
       // Check for tutorial scenario triggers
@@ -85,6 +139,9 @@ export function Game() {
 
   const handleDecision = (decision: Decision) => {
     if (!gameState) return;
+
+    // Auto-close mobile status drawer when decision is made
+    setShowMobileStatus(false);
 
     setRecentOutcome('');
     setLastDecisionId('');
@@ -161,7 +218,9 @@ export function Game() {
     setLastDecisionId('');
     setNotification(null);
     setGameState(null);
+    setGameLoadError(null);
     setLoadoutComplete(false);
+    setScenario(null); // Reset scenario to generate a new one
     resetInventory();
   };
 
@@ -176,12 +235,14 @@ export function Game() {
     if (!choice) return;
 
     // Apply tutorial scenario outcome to game state
-    const updatedMetrics = { ...gameState.metrics };
+    const updatedMetrics: PlayerMetrics = { ...gameState.metrics };
     Object.entries(choice.outcome.metricsChange).forEach(([key, value]) => {
       if (key in updatedMetrics && typeof value === 'number') {
         const metricKey = key as keyof PlayerMetrics;
-        const currentValue = updatedMetrics[metricKey] as number;
-        (updatedMetrics[metricKey] as number) = Math.max(0, Math.min(100, currentValue + value));
+        if (metricKey in updatedMetrics) {
+          const currentValue = updatedMetrics[metricKey] as number;
+          updatedMetrics[metricKey] = Math.max(0, Math.min(100, currentValue + value)) as never;
+        }
       }
     });
 
@@ -233,7 +294,40 @@ export function Game() {
 
   // Show loadout screen first
   if (!loadoutComplete) {
-    return <LoadoutScreen onComplete={handleLoadoutComplete} />;
+    // Wait for scenario to be generated before showing loadout
+    if (!scenario) {
+      return (
+        <div className="min-h-screen bg-gray-950 text-gray-100 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-400 mx-auto mb-4"></div>
+            <p className="text-gray-400">Preparing mission briefing...</p>
+          </div>
+        </div>
+      );
+    }
+    return <LoadoutScreen scenario={scenario} onComplete={handleLoadoutComplete} />;
+  }
+
+  // Error state if game failed to load
+  if (gameLoadError) {
+    return (
+      <div className="min-h-screen bg-gray-950 text-gray-100 flex items-center justify-center">
+        <div className="text-center max-w-md p-6">
+          <div className="text-red-500 text-5xl mb-4">⚠️</div>
+          <h2 className="text-xl font-bold text-red-400 mb-2">Failed to Load Game</h2>
+          <p className="text-gray-400 mb-6">{gameLoadError}</p>
+          <button
+            onClick={() => {
+              setGameLoadError(null);
+              setLoadoutComplete(false);
+            }}
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // Loading state while game initializes
@@ -280,8 +374,8 @@ export function Game() {
 
       {/* Mobile Status Button */}
       <button
-        onClick={() => setShowMobileStatus(true)}
-        className="lg:hidden fixed top-4 right-4 z-40 bg-gray-900/95 backdrop-blur-md border-2 border-gray-700 rounded-xl shadow-2xl p-3 active:scale-95 transition-transform"
+        onClick={handleStatusButtonClick}
+        className={`lg:hidden fixed top-4 right-4 z-40 bg-gray-900/95 backdrop-blur-md border-2 border-gray-700 rounded-xl shadow-2xl p-3 active:scale-95 transition-transform ${showPulse ? 'animate-pulse' : ''}`}
         aria-label="View status"
       >
         <div className="flex items-center gap-2">
@@ -299,14 +393,18 @@ export function Game() {
       {/* Mobile Status Drawer */}
       {showMobileStatus && (
         <div className="lg:hidden fixed inset-0 z-50 flex items-end">
-          {/* Backdrop */}
+          {/* Backdrop with fallback */}
           <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fadeIn"
+            className="absolute inset-0 backdrop-blur-fallback animate-fadeIn"
             onClick={() => setShowMobileStatus(false)}
           />
 
-          {/* Drawer */}
-          <div className="relative w-full max-h-[85vh] bg-gray-950 border-t-2 border-gray-700 rounded-t-2xl overflow-y-auto animate-slideUp">
+          {/* Drawer with swipe support */}
+          <div
+            className="relative w-full max-h-[85vh] bg-gray-950 border-t-2 border-gray-700 rounded-t-2xl overflow-y-auto animate-slideUp"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
             <div className="sticky top-0 bg-gray-900 border-b border-gray-700 px-4 py-3 flex items-center justify-between z-10">
               <h2 className="text-lg font-bold text-gray-100 flex items-center gap-2">
                 <span>⚕️</span>

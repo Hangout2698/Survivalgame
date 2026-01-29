@@ -5,16 +5,20 @@ import { generateDecisions, applyDecision } from './decisionEngine';
 import { analyzeSurvivalPerformance } from './survivalRules';
 import { loadActiveSurvivalGuide } from './survivalGuideService';
 
+// Time constants - extracted to avoid duplication
+const TIME_SEQUENCE: TimeOfDay[] = ['dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night'];
+const HOURS_PER_PERIOD: Record<TimeOfDay, number> = {
+  dawn: 2,
+  morning: 4,
+  midday: 3,
+  afternoon: 4,
+  dusk: 2,
+  night: 9
+};
+
 function progressTime(currentTime: TimeOfDay, hoursToAdd: number): { newTime: TimeOfDay; totalHours: number } {
-  const timeSequence: TimeOfDay[] = ['dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night'];
-  const hoursPerPeriod: Record<TimeOfDay, number> = {
-    dawn: 2,
-    morning: 4,
-    midday: 3,
-    afternoon: 4,
-    dusk: 2,
-    night: 9
-  };
+  const timeSequence = TIME_SEQUENCE;
+  const hoursPerPeriod = HOURS_PER_PERIOD;
 
   let currentIndex = timeSequence.indexOf(currentTime);
   let remainingHours = hoursToAdd;
@@ -39,15 +43,8 @@ function progressTime(currentTime: TimeOfDay, hoursToAdd: number): { newTime: Ti
 }
 
 function calculateTimeUntilDuskOrDawn(currentTime: TimeOfDay): string {
-  const timeSequence: TimeOfDay[] = ['dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night'];
-  const hoursPerPeriod: Record<TimeOfDay, number> = {
-    dawn: 2,
-    morning: 4,
-    midday: 3,
-    afternoon: 4,
-    dusk: 2,
-    night: 9
-  };
+  const timeSequence = TIME_SEQUENCE;
+  const hoursPerPeriod = HOURS_PER_PERIOD;
 
   const currentIndex = timeSequence.indexOf(currentTime);
   const isDaytime = currentTime === 'dawn' || currentTime === 'morning' || currentTime === 'midday' || currentTime === 'afternoon' || currentTime === 'dusk';
@@ -80,8 +77,8 @@ function calculateTimeUntilDuskOrDawn(currentTime: TimeOfDay): string {
   }
 }
 
-export async function createNewGame(): Promise<GameState> {
-  const scenario = generateScenario();
+export async function createNewGame(providedScenario?: ReturnType<typeof generateScenario>): Promise<GameState> {
+  const scenario = providedScenario || generateScenario();
   const metrics = initializeMetrics(scenario);
   const survivalGuide = await loadActiveSurvivalGuide();
 
@@ -112,8 +109,13 @@ export function makeDecision(state: GameState, decision: Decision): GameState {
   const outcome = applyDecision(decision, state);
 
   // Apply any delayed effects that should trigger this turn
+  // OPTIMIZATION: Only check recent history (last 5 turns max) since delayed effects are short-term
+  // This prevents performance degradation as game history grows to 15-20 turns
   let delayedMetricsChange: Partial<PlayerMetrics> = {};
-  state.history.forEach(pastOutcome => {
+  const recentHistoryStart = Math.max(0, state.history.length - 5);
+  const recentHistory = state.history.slice(recentHistoryStart);
+
+  recentHistory.forEach(pastOutcome => {
     if (pastOutcome.delayedEffects) {
       pastOutcome.delayedEffects.forEach(delayedEffect => {
         if (delayedEffect.turn === state.turnNumber) {
@@ -122,7 +124,7 @@ export function makeDecision(state: GameState, decision: Decision): GameState {
           metricsKeys.forEach(metricKey => {
             const currentValue = delayedMetricsChange[metricKey] as number | undefined;
             const changeValue = delayedEffect.metricsChange[metricKey] as number | undefined;
-            delayedMetricsChange[metricKey] = ((currentValue || 0) + (changeValue || 0)) as any;
+            delayedMetricsChange[metricKey] = ((currentValue || 0) + (changeValue || 0)) as PlayerMetrics[typeof metricKey];
           });
           // Add delayed effect description to consequences
           if (delayedEffect.effect) {
@@ -255,11 +257,16 @@ export function makeDecision(state: GameState, decision: Decision): GameState {
   if (endCheck.ended) {
     const analysis = analyzeSurvivalPerformance(newState);
 
+    // Build lessons array, filtering out empty strings and removing duplicates
+    const allLessons = [endCheck.reason || '', ...analysis.lessons]
+      .filter(lesson => lesson && lesson.trim().length > 0) // Remove empty/whitespace
+      .filter((lesson, index, self) => self.indexOf(lesson) === index); // Remove duplicates
+
     return {
       ...newState,
       status: 'ended',
       outcome: endCheck.outcome,
-      lessons: [endCheck.reason || '', ...analysis.lessons],
+      lessons: allLessons,
       keyMoments: identifyKeyMoments(newState)
     };
   }
