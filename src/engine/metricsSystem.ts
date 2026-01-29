@@ -103,7 +103,7 @@ export function updateMetrics(
 export function applyEnvironmentalEffects(
   metrics: PlayerMetrics,
   scenario: Scenario,
-  _turnNumber: number
+  turnNumber: number
 ): Partial<PlayerMetrics> {
   const changes: Partial<PlayerMetrics> = {
     energy: 0,
@@ -114,6 +114,11 @@ export function applyEnvironmentalEffects(
     fireQuality: 0,
     injurySeverity: 0
   };
+
+  // EARLY GAME DIFFICULTY: First 8 turns are about establishing basics
+  // Players face harsher conditions until they've built shelter, fire, etc.
+  const earlyGameMultiplier = turnNumber <= 8 ? 1.0 + (9 - turnNumber) * 0.08 : 1.0;
+  // Turn 1: 1.64x harsh, Turn 5: 1.32x, Turn 8: 1.08x, Turn 9+: 1.0x
 
   // Principle: "Wet clothing loses insulating properties and accelerates hypothermia"
   // Wetness reduces shelter effectiveness
@@ -235,25 +240,52 @@ export function applyEnvironmentalEffects(
     changes.cumulativeRisk = 5;
   }
 
+  // Apply early game difficulty multiplier to negative effects
+  // This makes survival harder in the first 8 turns, forcing players to establish basics
+  if (earlyGameMultiplier > 1.0) {
+    if ((changes.energy || 0) < 0) {
+      changes.energy = (changes.energy || 0) * earlyGameMultiplier;
+    }
+    if ((changes.hydration || 0) < 0) {
+      changes.hydration = (changes.hydration || 0) * earlyGameMultiplier;
+    }
+    if ((changes.bodyTemperature || 0) < 0) {
+      changes.bodyTemperature = (changes.bodyTemperature || 0) * earlyGameMultiplier;
+    }
+    if ((changes.morale || 0) < 0) {
+      changes.morale = (changes.morale || 0) * earlyGameMultiplier;
+    }
+    // Shelter and fire degrade faster early on
+    if ((changes.shelter || 0) < 0) {
+      changes.shelter = (changes.shelter || 0) * earlyGameMultiplier;
+    }
+    if ((changes.fireQuality || 0) < 0) {
+      changes.fireQuality = (changes.fireQuality || 0) * earlyGameMultiplier;
+    }
+  }
+
   return changes;
 }
 
 function calculateSignalEffectiveness(scenario: Scenario, morale: number): number {
-  let effectiveness = 50;
+  // Reduced base effectiveness - signaling is harder without preparation
+  let effectiveness = 30;
 
-  if (scenario.weather === 'clear') effectiveness += 30;
-  if (scenario.weather === 'storm') effectiveness -= 40;
-  if (scenario.weather === 'rain' || scenario.weather === 'snow') effectiveness -= 20;
+  // Reduced bonuses - conditions help but aren't everything
+  if (scenario.weather === 'clear') effectiveness += 20;
+  if (scenario.weather === 'storm') effectiveness -= 35;
+  if (scenario.weather === 'rain' || scenario.weather === 'snow') effectiveness -= 15;
 
-  if (scenario.timeOfDay === 'midday') effectiveness += 20;
-  if (scenario.timeOfDay === 'night') effectiveness -= 30;
+  if (scenario.timeOfDay === 'midday') effectiveness += 15;
+  if (scenario.timeOfDay === 'night') effectiveness -= 25;
 
   if (scenario.environment === 'mountains' || scenario.environment === 'desert') {
-    effectiveness += 15;
+    effectiveness += 10;
   }
-  if (scenario.environment === 'forest') effectiveness -= 25;
+  if (scenario.environment === 'forest') effectiveness -= 20;
 
-  effectiveness += (morale - 50) * 0.3;
+  // Morale has less impact on signal effectiveness
+  effectiveness += (morale - 50) * 0.2;
 
   return clamp(effectiveness, 0, 100);
 }
@@ -298,7 +330,7 @@ export function checkEndConditions(state: GameState): {
     return {
       ended: true,
       outcome: 'died',
-      reason: m.bodyTemperature <= 31.5 ? 'Severe hypothermia' : 'Hyperthermia'
+      reason: m.bodyTemperature <= 31.5 ? 'Death from severe hypothermia' : 'Death from hyperthermia'
     };
   }
 
@@ -306,7 +338,7 @@ export function checkEndConditions(state: GameState): {
     return {
       ended: true,
       outcome: 'died',
-      reason: 'Complete physical collapse from exhaustion and dehydration'
+      reason: 'You collapsed from combined exhaustion and dehydration. Your body shut down.'
     };
   }
 
@@ -314,7 +346,7 @@ export function checkEndConditions(state: GameState): {
     return {
       ended: true,
       outcome: 'died',
-      reason: 'Fatal exhaustion'
+      reason: 'You collapsed from complete energy depletion. Fatal exhaustion.'
     };
   }
 
@@ -322,7 +354,7 @@ export function checkEndConditions(state: GameState): {
     return {
       ended: true,
       outcome: 'died',
-      reason: 'Fatal dehydration'
+      reason: 'Your organs failed due to severe dehydration. You did not survive.'
     };
   }
 
@@ -330,28 +362,35 @@ export function checkEndConditions(state: GameState): {
     return {
       ended: true,
       outcome: 'died',
-      reason: 'Injury complications'
+      reason: 'Untreated injuries led to fatal complications. You succumbed to your wounds.'
     };
   }
 
+  // NAVIGATION WIN: Requires sustained effort, not instant success
+  // Must have multiple successful navigation attempts AND minimum turns to reach safety
+  const navigationAttempts = state.history.filter(h => h.wasNavigationSuccess).length;
   const lastOutcome = state.history[state.history.length - 1];
-  if (lastOutcome?.wasNavigationSuccess) {
+
+  if (state.turnNumber >= 10 && navigationAttempts >= 3 && lastOutcome?.wasNavigationSuccess && m.energy > 20) {
     return {
       ended: true,
       outcome: 'survived',
-      reason: 'You successfully navigated to safety!'
+      reason: 'After sustained navigation efforts, you successfully reached safety!'
     };
   }
 
-  if (state.turnNumber >= 6 && successfulSignals >= 3 && m.signalEffectiveness > 55 && m.survivalProbability > 45) {
+  // SIGNAL-BASED RESCUE: Requires minimum 12 turns and 5 successful signals
+  // This ensures players must demonstrate comprehensive survival knowledge first
+  if (state.turnNumber >= 12 && successfulSignals >= 5 && m.signalEffectiveness > 60 && m.survivalProbability > 50) {
     return {
       ended: true,
       outcome: 'survived',
-      reason: 'Your persistent signaling paid off. A rescue team spotted you and extracted you safely.'
+      reason: 'Your persistent and strategic signaling paid off. A rescue team spotted you and extracted you safely.'
     };
   }
 
-  if (state.turnNumber >= 4 && successfulSignals >= 2 && m.signalEffectiveness > 65 && m.survivalProbability > 55) {
+  // HIGH-QUALITY EARLY RESCUE: Still requires turn 10+ and exceptional conditions
+  if (state.turnNumber >= 10 && successfulSignals >= 4 && m.signalEffectiveness > 75 && m.survivalProbability > 65) {
     return {
       ended: true,
       outcome: 'survived',
@@ -385,7 +424,7 @@ export function checkEndConditions(state: GameState): {
       return {
         ended: true,
         outcome: 'died',
-        reason: 'The accumulation of poor decisions proved fatal.'
+        reason: 'Your condition deteriorated over time. The accumulation of poor decisions proved fatal.'
       };
     }
   }
@@ -394,7 +433,7 @@ export function checkEndConditions(state: GameState): {
     return {
       ended: true,
       outcome: 'died',
-      reason: 'Your condition deteriorated beyond recovery.'
+      reason: 'Multiple critical failures compounded. Your condition deteriorated beyond recovery.'
     };
   }
 

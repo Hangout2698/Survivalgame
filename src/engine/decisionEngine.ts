@@ -6,6 +6,7 @@ import {
   searchPrinciples
 } from './survivalPrinciplesService';
 import { generateConsequenceExplanation } from './consequenceExplainer';
+import { getUnlockedDecisionTypes } from './principleProgressService';
 
 // Calculate success bonus based on principle alignment score
 function calculateSuccessBonus(state: GameState): number {
@@ -654,6 +655,87 @@ function getWaterPurificationDecisions(state: GameState): Decision[] {
   return decisions;
 }
 
+function getPrincipleBasedDecisions(state: GameState): Decision[] {
+  const { metrics } = state;
+  const decisions: Decision[] = [];
+  const unlockedTypes = getUnlockedDecisionTypes(state);
+
+  // Expert-level decisions (80+ alignment)
+  if (unlockedTypes.has('expert-shelter') && metrics.energy > 35) {
+    decisions.push({
+      id: 'expert-shelter-construction',
+      text: 'Expert shelter: Multi-layer insulation and wind protection',
+      energyCost: 35,
+      riskLevel: 2,
+      timeRequired: 3
+    });
+  }
+
+  if (unlockedTypes.has('strategic-signal') && metrics.energy > 30) {
+    decisions.push({
+      id: 'strategic-signaling',
+      text: 'Strategic signaling: Maximize visibility and timing',
+      energyCost: 25,
+      riskLevel: 2,
+      timeRequired: 2
+    });
+  }
+
+  if (unlockedTypes.has('efficient-navigate') && metrics.energy > 40) {
+    decisions.push({
+      id: 'efficient-navigation',
+      text: 'Efficient navigation: Terrain reading and energy conservation',
+      energyCost: 30,
+      riskLevel: 3,
+      timeRequired: 2
+    });
+  }
+
+  // Advanced decisions (70+ alignment)
+  if (unlockedTypes.has('advanced-fire') && metrics.energy > 25) {
+    decisions.push({
+      id: 'advanced-fire-techniques',
+      text: 'Advanced fire: Long-burning configuration with heat reflection',
+      energyCost: 28,
+      riskLevel: 2,
+      timeRequired: 2
+    });
+  }
+
+  if (unlockedTypes.has('optimized-rest') && metrics.energy < 60) {
+    decisions.push({
+      id: 'optimized-rest',
+      text: 'Optimized rest: Strategic recovery with thermal management',
+      energyCost: -35,
+      riskLevel: 1,
+      timeRequired: 3
+    });
+  }
+
+  // Improved decisions (60+ alignment)
+  if (unlockedTypes.has('improved-scout') && metrics.energy > 30) {
+    decisions.push({
+      id: 'improved-scouting',
+      text: 'Improved scouting: Systematic terrain analysis',
+      energyCost: 20,
+      riskLevel: 2,
+      timeRequired: 2
+    });
+  }
+
+  if (unlockedTypes.has('better-forage') && metrics.energy > 25) {
+    decisions.push({
+      id: 'better-foraging',
+      text: 'Better foraging: Target high-value resources',
+      energyCost: 22,
+      riskLevel: 2,
+      timeRequired: 2
+    });
+  }
+
+  return decisions;
+}
+
 export function generateDecisions(state: GameState): Decision[] {
   const { scenario, metrics, turnNumber } = state;
   const decisions: Decision[] = [];
@@ -669,6 +751,9 @@ export function generateDecisions(state: GameState): Decision[] {
 
   const waterDecisions = getWaterPurificationDecisions(state);
   decisions.push(...waterDecisions);
+
+  const principleDecisions = getPrincipleBasedDecisions(state);
+  decisions.push(...principleDecisions);
 
   if (metrics.energy > 25 && state.currentEnvironment !== 'desert') {
     decisions.push({
@@ -708,6 +793,190 @@ export function generateDecisions(state: GameState): Decision[] {
     });
   }
 
+  // High morale unlocks challenging but rewarding options
+  if (metrics.morale > 60 && metrics.energy > 40) {
+    if (state.currentEnvironment === 'mountains' || state.currentEnvironment === 'forest') {
+      decisions.push({
+        id: 'challenging-climb',
+        text: 'Attempt challenging climb to high ground',
+        energyCost: 40,
+        riskLevel: 7,
+        timeRequired: 3
+      });
+    }
+  }
+
+  // Low morale shows desperate panic options
+  if (metrics.morale < 35 && metrics.energy > 30) {
+    decisions.push({
+      id: 'desperate-rush',
+      text: 'Desperate rush through terrain (risky but fast)',
+      energyCost: 45,
+      riskLevel: 8,
+      timeRequired: 2
+    });
+  }
+
+  // Morale recovery actions
+  if (metrics.morale < 60 && metrics.energy > 20) {
+    decisions.push({
+      id: 'rest-and-reflect',
+      text: 'Take time to rest and reflect on situation',
+      energyCost: -5,
+      riskLevel: 1,
+      timeRequired: 2
+    });
+  }
+
+  if (metrics.morale < 50 && turnNumber > 3) {
+    decisions.push({
+      id: 'review-survival-plan',
+      text: 'Review survival plan and regain focus',
+      energyCost: 0,
+      riskLevel: 1,
+      timeRequired: 1
+    });
+  }
+
+  if (metrics.morale < 40 && metrics.energy > 15) {
+    decisions.push({
+      id: 'force-positivity',
+      text: 'Force yourself to stay positive and focused',
+      energyCost: -8,
+      riskLevel: 1,
+      timeRequired: 1
+    });
+  }
+
+  // HIGH-RISK/HIGH-REWARD DECISIONS
+  // Only available in specific conditions and environments
+
+  // Cliff descent - mountains only, high energy required
+  if (state.currentEnvironment === 'mountains' && metrics.energy > 50 && turnNumber >= 5) {
+    decisions.push({
+      id: 'cliff-descent-risky',
+      text: 'Attempt risky cliff descent for rapid elevation loss',
+      energyCost: 45,
+      riskLevel: 9,
+      timeRequired: 3
+    });
+  }
+
+  // Emergency flare signal - requires equipment and high stakes
+  const hasFlare = state.equipment.some(e => e.name.toLowerCase().includes('flare'));
+  if (hasFlare && turnNumber >= 8 && metrics.energy > 30) {
+    decisions.push({
+      id: 'emergency-flare',
+      text: 'Use emergency flare (ONE CHANCE - high rescue probability)',
+      energyCost: 15,
+      riskLevel: 8,
+      timeRequired: 1
+    });
+  }
+
+  // River crossing - forest/coast, desperate measure
+  if ((state.currentEnvironment === 'forest' || state.currentEnvironment === 'coast') &&
+      metrics.energy > 40 && turnNumber >= 6) {
+    decisions.push({
+      id: 'river-crossing',
+      text: 'Cross river/stream (dangerous but may reach safety)',
+      energyCost: 50,
+      riskLevel: 9,
+      timeRequired: 2
+    });
+  }
+
+  // All-out signal barrage - use everything at once
+  const hasMultipleSignals = state.equipment.filter(e =>
+    e.name.toLowerCase().includes('whistle') ||
+    e.name.toLowerCase().includes('mirror') ||
+    e.name.toLowerCase().includes('flashlight')
+  ).length >= 2;
+
+  if (hasMultipleSignals && turnNumber >= 10 && metrics.energy > 35) {
+    decisions.push({
+      id: 'signal-barrage',
+      text: 'All-out signal barrage (use multiple devices simultaneously)',
+      energyCost: 30,
+      riskLevel: 6,
+      timeRequired: 2
+    });
+  }
+
+  // CASCADING EFFECT DECISIONS
+  // Unlock based on previous decision sequences
+
+  // Built shelter + started fire = improved campsite
+  const hasShelter = state.history.some(h => h.decision.id === 'shelter' || h.decision.id === 'improve-shelter');
+  const hasFire = state.metrics.fireQuality > 30;
+  if (hasShelter && hasFire && turnNumber >= 5 && metrics.energy > 25) {
+    decisions.push({
+      id: 'establish-base-camp',
+      text: 'Establish base camp (improve existing shelter + fire setup)',
+      energyCost: 25,
+      riskLevel: 2,
+      timeRequired: 3
+    });
+  }
+
+  // Multiple successful signals = maintain signal pattern
+  const signalCount = state.successfulSignals || 0;
+  if (signalCount >= 2 && turnNumber >= 8 && metrics.energy > 20) {
+    decisions.push({
+      id: 'maintain-signal-pattern',
+      text: 'Maintain signal pattern (build on previous successful signals)',
+      energyCost: 18,
+      riskLevel: 2,
+      timeRequired: 2
+    });
+  }
+
+  // Used knife for shelter = knife maintenance unlocked
+  const usedKnife = state.history.some(h => h.decision.id === 'use-knife-shelter');
+  const hasKnife = state.equipment.some(e => e.name.toLowerCase().includes('knife'));
+  if (usedKnife && hasKnife && turnNumber >= 4) {
+    decisions.push({
+      id: 'maintain-knife',
+      text: 'Maintain and sharpen knife for future use',
+      energyCost: 8,
+      riskLevel: 1,
+      timeRequired: 1
+    });
+  }
+
+  // CRITICAL MOMENT SCENARIOS
+  // Inject urgent decisions at specific turns
+
+  if (turnNumber === 7 && scenario.weather === 'clear' && scenario.timeOfDay === 'midday') {
+    decisions.push({
+      id: 'helicopter-spotted',
+      text: '🚁 URGENT: Helicopter spotted in distance - signal NOW!',
+      energyCost: 35,
+      riskLevel: 5,
+      timeRequired: 1
+    });
+  }
+
+  if (turnNumber === 10 && (scenario.weather === 'storm' || scenario.temperature < 5)) {
+    decisions.push({
+      id: 'weather-emergency',
+      text: '⚠️ CRITICAL: Weather worsening - must improve shelter immediately',
+      energyCost: 40,
+      riskLevel: 6,
+      timeRequired: 2
+    });
+  }
+
+  if (turnNumber === 12 && metrics.hydration < 40) {
+    decisions.push({
+      id: 'water-crisis',
+      text: '💧 EMERGENCY: Water critically low - find source NOW or ration',
+      energyCost: 45,
+      riskLevel: 7,
+      timeRequired: 3
+    });
+  }
+
   return decisions.slice(0, 6);
 }
 
@@ -721,7 +990,13 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
 
   // Apply success bonus based on principle alignment
   const successBonus = calculateSuccessBonus(state);
-  const roll = Math.random() + successBonus;
+
+  // Calculate morale modifier affecting success rates
+  // Low morale increases accident/failure risk, high morale improves outcomes
+  const moraleModifier = (state.metrics.morale - 50) / 100; // -0.5 to +0.5
+  const moraleSuccessAdjustment = moraleModifier * 0.2; // ±10% swing on success rolls
+
+  const roll = Math.random() + successBonus + moraleSuccessAdjustment;
   const actualEnergyCost = scaleEnergyCost(decision.energyCost, decision.riskLevel, state);
 
   // Calculate additional hydration cost for working during hot conditions
@@ -1987,6 +2262,502 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       }
       break;
 
+    // Principle-based expert decisions (80+ alignment)
+    case 'expert-shelter-construction':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        shelter: 40, // Better than regular shelter
+        bodyTemperature: 0.5,
+        morale: 12,
+        cumulativeRisk: -5
+      };
+      immediateEffect = 'You construct a multi-layer shelter with insulation and wind breaks.';
+      consequences.push('Your expert knowledge creates exceptional protection.');
+      consequences.push('The shelter will retain heat and shed moisture effectively.');
+      break;
+
+    case 'strategic-signaling':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        morale: 10,
+        cumulativeRisk: -8
+      };
+      if (roll > 0.55) { // Better odds than regular signaling
+        immediateEffect = 'You position your signal for maximum visibility and time it perfectly.';
+        consequences.push('Your strategic approach maximizes rescue probability.');
+        metricsChange.morale = 18;
+        metricsChange.cumulativeRisk = -15;
+      } else {
+        immediateEffect = 'You apply expert signaling techniques to improve visibility.';
+        consequences.push('Even in poor conditions, your signal is well-positioned.');
+        metricsChange.cumulativeRisk = -10;
+      }
+      break;
+
+    case 'efficient-navigation':
+      metricsChange = {
+        energy: -actualEnergyCost * 0.75, // 25% energy savings
+        hydration: -5,
+        morale: 8,
+        cumulativeRisk: 5
+      };
+      if (roll > 0.6) {
+        immediateEffect = 'You read the terrain expertly and navigate efficiently.';
+        consequences.push('Your experience shows - progress is steady with minimal wasted effort.');
+        metricsChange.morale = 15;
+        metricsChange.cumulativeRisk = -5;
+      } else {
+        immediateEffect = 'You conserve energy while making progress through the terrain.';
+        consequences.push('Efficient navigation pays off in energy savings.');
+      }
+      break;
+
+    // Advanced decisions (70+ alignment)
+    case 'advanced-fire-techniques':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        fireQuality: 45, // Better fire than standard
+        bodyTemperature: 0.8,
+        morale: 10,
+        cumulativeRisk: -3
+      };
+      immediateEffect = 'You build a long-burning fire with reflector for maximum heat.';
+      consequences.push('Your advanced technique creates sustained warmth.');
+      consequences.push('The fire will last longer and require less maintenance.');
+      break;
+
+    case 'optimized-rest':
+      metricsChange = {
+        energy: -actualEnergyCost * 1.2, // 20% better recovery
+        bodyTemperature: 0.3,
+        morale: 10,
+        cumulativeRisk: -2
+      };
+      immediateEffect = 'You rest strategically, managing body heat and conserving energy.';
+      consequences.push('Your knowledge of thermal management improves recovery.');
+      break;
+
+    // Improved decisions (60+ alignment)
+    case 'improved-scouting':
+      metricsChange = {
+        energy: -actualEnergyCost * 0.85, // 15% energy savings
+        morale: 5,
+        cumulativeRisk: 2
+      };
+      if (roll > 0.65) {
+        immediateEffect = 'You scout systematically and discover valuable resources.';
+        consequences.push('Your methodical approach finds what others would miss.');
+        metricsChange.morale = 12;
+        metricsChange.cumulativeRisk = -3;
+        // Chance to find equipment or resources
+        if (roll > 0.85) {
+          equipmentChanges.added = [{ name: 'Found supplies', quantity: 1, condition: 'good' as const }];
+          consequences.push('You found useful supplies!');
+        }
+      } else {
+        immediateEffect = 'You scout the area carefully, noting terrain features.';
+        consequences.push('Systematic analysis helps you understand the environment.');
+      }
+      break;
+
+    case 'better-foraging':
+      metricsChange = {
+        energy: -actualEnergyCost * 0.9, // 10% energy savings
+        morale: 6,
+        cumulativeRisk: 1
+      };
+      if (roll > 0.6) {
+        immediateEffect = 'You identify and gather high-calorie edible plants.';
+        consequences.push('Your knowledge targets the most valuable resources.');
+        metricsChange.energy = 15; // Net positive!
+        metricsChange.morale = 15;
+        equipmentChanges.added = [{ name: 'Edible berries', quantity: 2, condition: 'good' as const }];
+      } else {
+        immediateEffect = 'You forage carefully, avoiding toxic plants.';
+        consequences.push('Safety first - no gains but no risks taken.');
+        equipmentChanges.added = [{ name: 'Edible berries', quantity: 1, condition: 'good' as const }];
+      }
+      break;
+
+    // Morale-gated decisions
+    case 'challenging-climb':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        hydration: -12,
+        cumulativeRisk: 10
+      };
+
+      // High morale improves success chance
+      if (roll > 0.65 - (moraleSuccessAdjustment * 0.5)) { // Morale has extra impact here
+        immediateEffect = 'Your confidence carries you up the challenging terrain.';
+        consequences.push('You reach a vantage point with an excellent view.');
+        metricsChange.morale = 18;
+        metricsChange.cumulativeRisk = -8;
+
+        if (roll > 0.85) {
+          consequences.push('You spot a clear path to safety in the distance!');
+          metricsChange.morale = 25;
+          metricsChange.cumulativeRisk = -15;
+        }
+      } else if (roll > 0.4) {
+        immediateEffect = 'The climb is exhausting but you make it to higher ground.';
+        consequences.push('The effort was worth it for the improved position.');
+        metricsChange.morale = 8;
+      } else {
+        immediateEffect = 'Halfway up, you lose your footing and slide back down.';
+        consequences.push('The failed attempt is demoralizing and costly.');
+        metricsChange.morale = -15;
+        metricsChange.injurySeverity = 15;
+        metricsChange.energy = -60; // Total exhaustion from the attempt
+      }
+      break;
+
+    case 'desperate-rush':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        hydration: -10,
+        morale: roll > 0.5 ? 5 : -12,
+        cumulativeRisk: 15
+      };
+
+      // Low morale makes this even more dangerous
+      const rushDangerThreshold = 0.45 + (moraleModifier * 0.15); // Lower morale = more danger
+
+      if (roll < rushDangerThreshold) {
+        immediateEffect = 'In your desperation, you trip and fall hard.';
+        consequences.push('Panic led to injury. You should have been more careful.');
+        metricsChange.injurySeverity = 25;
+        metricsChange.morale = -18;
+      } else if (roll > 0.75) {
+        immediateEffect = 'Adrenaline pushes you forward. You cover ground quickly.';
+        consequences.push('The rush pays off with rapid progress.');
+        metricsChange.morale = 12;
+        metricsChange.cumulativeRisk = -5;
+      } else {
+        immediateEffect = 'You push through the terrain recklessly.';
+        consequences.push('You made progress but at significant cost.');
+        metricsChange.morale = -5;
+      }
+      break;
+
+    case 'rest-and-reflect':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        morale: 15,
+        bodyTemperature: state.scenario.temperature < 15 ? -0.2 : 0.1,
+        cumulativeRisk: -3
+      };
+      immediateEffect = 'You sit quietly and take stock of your situation.';
+      consequences.push('Mental clarity returns. You feel more in control.');
+
+      if (state.metrics.morale < 30) {
+        metricsChange.morale = 20; // Extra benefit when really struggling
+        consequences.push('The break was desperately needed.');
+      }
+      break;
+
+    case 'review-survival-plan':
+      metricsChange = {
+        energy: 0,
+        morale: 10,
+        cumulativeRisk: -2
+      };
+      immediateEffect = 'You review your priorities: shelter, water, fire, signals.';
+      consequences.push('Organizing your thoughts provides reassurance.');
+
+      if (state.principleAlignmentScore && state.principleAlignmentScore > 60) {
+        metricsChange.morale = 15;
+        consequences.push('Your growing knowledge gives you confidence.');
+      }
+      break;
+
+    case 'force-positivity':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        morale: 8,
+        cumulativeRisk: -1
+      };
+      immediateEffect = 'You force negative thoughts away and focus on survival.';
+      consequences.push('Mental discipline helps, but it takes energy.');
+
+      if (roll > 0.7) {
+        metricsChange.morale = 12;
+        consequences.push('The mental reset was effective.');
+      } else {
+        consequences.push('Fighting your emotions is exhausting.');
+      }
+      break;
+
+    // HIGH-RISK/HIGH-REWARD DECISIONS
+    case 'cliff-descent-risky':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        hydration: -15,
+        cumulativeRisk: 25
+      };
+
+      // 50% success, 30% injury, 20% critical injury
+      if (roll > 0.5) {
+        immediateEffect = 'You descend the cliff face using cracks and ledges. Your heart pounds.';
+        consequences.push('The risky descent paid off - you dropped significant elevation quickly!');
+        metricsChange.morale = 20;
+        metricsChange.cumulativeRisk = -15;
+        if (roll > 0.85) {
+          environmentChange = 'forest';
+          consequences.push('You reached lower, safer terrain!');
+          metricsChange.morale = 30;
+        }
+      } else if (roll > 0.20) {
+        immediateEffect = 'Halfway down, your footing slips. You fall several meters.';
+        consequences.push('The fall was hard. You are injured and shaken.');
+        metricsChange.injurySeverity = 35;
+        metricsChange.morale = -20;
+        metricsChange.energy = -70; // Exhausted from trauma
+        delayedEffects.push({
+          turn: state.turnNumber + 1,
+          effect: 'The injury from the fall is throbbing and limiting movement.',
+          metricsChange: { energy: -15, morale: -10 }
+        });
+      } else {
+        immediateEffect = 'You lose your grip and fall hard. The impact is severe.';
+        consequences.push('CRITICAL INJURY. This was a devastating mistake.');
+        metricsChange.injurySeverity = 60;
+        metricsChange.morale = -30;
+        metricsChange.energy = -80;
+        metricsChange.cumulativeRisk = 40;
+        delayedEffects.push({
+          turn: state.turnNumber + 1,
+          effect: 'The severe injury is worsening. Survival is now critical.',
+          metricsChange: { injurySeverity: 15, energy: -20, morale: -15 }
+        });
+      }
+      break;
+
+    case 'emergency-flare':
+      const flare = state.equipment.find(e => e.name.toLowerCase().includes('flare'));
+      metricsChange = {
+        energy: -actualEnergyCost,
+        morale: 10
+      };
+
+      // 80% rescue if conditions good, but flare is consumed
+      if (roll > 0.20) {
+        immediateEffect = 'You fire the emergency flare. It arcs into the sky with a brilliant red glow.';
+        consequences.push('The flare is visible for miles!');
+
+        if (state.metrics.signalEffectiveness > 50 && state.turnNumber >= 10) {
+          immediateEffect += ' In the distance, you hear a helicopter changing course!';
+          consequences.push('RESCUE IMMINENT! The flare was spotted!');
+          metricsChange.morale = 40;
+          metricsChange.cumulativeRisk = -30;
+        } else {
+          consequences.push('The flare was impressive, but no response yet.');
+          metricsChange.morale = 15;
+          metricsChange.cumulativeRisk = -10;
+        }
+      } else {
+        immediateEffect = 'You fire the flare but it misfires and fizzles out.';
+        consequences.push('The flare malfunctioned! Your only chance wasted!');
+        metricsChange.morale = -25;
+        metricsChange.cumulativeRisk = 15;
+      }
+
+      if (flare) {
+        equipmentChanges.removed = [flare.name];
+      }
+      break;
+
+    case 'river-crossing':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        hydration: -10,
+        bodyTemperature: -1.5,
+        cumulativeRisk: 20
+      };
+
+      // Very dangerous - 40% success, 30% wet, 30% swept away
+      if (roll > 0.60) {
+        immediateEffect = 'You wade through the icy water. The current is strong but you make it across.';
+        consequences.push('You crossed successfully! The other side may have better access to safety.');
+        metricsChange.morale = 18;
+        metricsChange.cumulativeRisk = -10;
+        if (roll > 0.85) {
+          consequences.push('On the far bank, you see signs of a trail!');
+          metricsChange.morale = 25;
+        }
+      } else if (roll > 0.30) {
+        immediateEffect = 'The current is stronger than expected. You slip and get completely soaked.';
+        consequences.push('You made it across but your clothes are drenched. Hypothermia risk is critical.');
+        metricsChange.bodyTemperature = -2.5;
+        metricsChange.morale = -15;
+        metricsChange.energy = -65;
+        delayedEffects.push({
+          turn: state.turnNumber + 1,
+          effect: 'Wet clothing accelerates heat loss. You are dangerously cold.',
+          metricsChange: { bodyTemperature: -1.0, energy: -20 }
+        });
+      } else {
+        immediateEffect = 'The current sweeps your feet out. You are pulled downstream and battered.';
+        consequences.push('You wash up on the bank, injured and hypothermic. This may have been fatal.');
+        metricsChange.injurySeverity = 45;
+        metricsChange.bodyTemperature = -3.5;
+        metricsChange.morale = -25;
+        metricsChange.energy = -75;
+        metricsChange.cumulativeRisk = 35;
+      }
+      break;
+
+    case 'signal-barrage':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        morale: 12,
+        cumulativeRisk: -8
+      };
+
+      immediateEffect = 'You activate multiple signaling devices simultaneously - whistle, mirror, movements.';
+      consequences.push('The coordinated effort creates maximum visibility.');
+
+      // Better success rate when combining signals
+      if (roll > 0.40) {
+        consequences.push('The multi-device approach significantly increases your signal effectiveness!');
+        metricsChange.morale = 20;
+        metricsChange.cumulativeRisk = -15;
+      } else {
+        consequences.push('The effort was exhausting but worthwhile.');
+        metricsChange.cumulativeRisk = -10;
+      }
+      break;
+
+    // CASCADING EFFECT DECISIONS
+    case 'establish-base-camp':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        shelter: 20,
+        fireQuality: 15,
+        morale: 15,
+        cumulativeRisk: -10
+      };
+
+      immediateEffect = 'You improve your existing camp with better organization and weatherproofing.';
+      consequences.push('Building on your previous work creates a synergistic effect.');
+      consequences.push('Your shelter and fire setup are now optimized.');
+
+      if (roll > 0.65) {
+        metricsChange.shelter = 30;
+        metricsChange.morale = 22;
+        consequences.push('The base camp is now exceptionally effective!');
+      }
+      break;
+
+    case 'maintain-signal-pattern':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        morale: 8,
+        cumulativeRisk: -12
+      };
+
+      immediateEffect = 'You repeat your successful signaling pattern with improved timing.';
+      consequences.push('Consistency increases the chance rescue teams will notice.');
+
+      // Better success because of previous signals
+      const previousSignals = state.successfulSignals || 0;
+      if (roll > (0.55 - previousSignals * 0.05)) {
+        consequences.push('Your persistent signaling is building a recognizable pattern!');
+        metricsChange.morale = 15;
+        metricsChange.cumulativeRisk = -18;
+      }
+      break;
+
+    case 'maintain-knife':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        morale: 5
+      };
+
+      immediateEffect = 'You sharpen and clean your knife using a stone.';
+      consequences.push('A well-maintained tool is more effective.');
+
+      // Improve knife condition if worn
+      const knife = state.equipment.find(e => e.name.toLowerCase().includes('knife'));
+      if (knife && knife.condition !== 'good') {
+        equipmentChanges.updated = [{ ...knife, condition: 'good' as const }];
+        consequences.push('Your knife is now in excellent condition!');
+        metricsChange.morale = 10;
+      }
+      break;
+
+    // CRITICAL MOMENT SCENARIOS
+    case 'helicopter-spotted':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        morale: roll > 0.60 ? 25 : 5,
+        cumulativeRisk: -15
+      };
+
+      if (roll > 0.60) {
+        immediateEffect = 'You frantically signal toward the helicopter. The pilot banks and circles!';
+        consequences.push('THEY SAW YOU! The helicopter is coming in for extraction!');
+        metricsChange.cumulativeRisk = -35;
+        metricsChange.morale = 40;
+      } else if (roll > 0.35) {
+        immediateEffect = 'You signal desperately but the helicopter continues on its flight path.';
+        consequences.push('They might have seen you - they may report your position.');
+        metricsChange.morale = 10;
+        metricsChange.cumulativeRisk = -20;
+      } else {
+        immediateEffect = 'You wave and shout but the helicopter is too far away.';
+        consequences.push('The opportunity passed. But now you know search aircraft are in the area.');
+        metricsChange.morale = 5;
+      }
+      break;
+
+    case 'weather-emergency':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        shelter: 25,
+        morale: -5,
+        cumulativeRisk: 12
+      };
+
+      immediateEffect = 'You work frantically to reinforce your shelter against the incoming storm.';
+      consequences.push('The improved shelter may save your life tonight.');
+
+      if (roll > 0.55) {
+        metricsChange.shelter = 35;
+        metricsChange.morale = 5;
+        consequences.push('Your emergency improvements are solid. You should survive the weather.');
+      } else {
+        consequences.push('You did what you could, but the storm will still be dangerous.');
+      }
+      break;
+
+    case 'water-crisis':
+      metricsChange = {
+        energy: -actualEnergyCost,
+        morale: -8,
+        cumulativeRisk: 15
+      };
+
+      if (roll > 0.55) {
+        immediateEffect = 'You search desperately and find a small stream!';
+        consequences.push('Water source located! Crisis averted.');
+        metricsChange.morale = 15;
+        metricsChange.hydration = 20;
+        metricsChange.cumulativeRisk = -10;
+        equipmentChanges.added = [{ name: 'Water bottle (untreated)', quantity: 2, condition: 'good' as const }];
+      } else if (roll > 0.30) {
+        immediateEffect = 'You find moisture from moss and morning dew.';
+        consequences.push('It is not much, but every drop counts.');
+        metricsChange.hydration = 8;
+        metricsChange.morale = 2;
+      } else {
+        immediateEffect = 'Despite your search, you find no water source.';
+        consequences.push('Dehydration is becoming critical. This is very dangerous.');
+        metricsChange.morale = -15;
+        metricsChange.cumulativeRisk = 25;
+      }
+      break;
+
     default:
       immediateEffect = 'You take action.';
   }
@@ -2038,8 +2809,19 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
     }
   }
 
+  // Navigation success is VERY difficult and requires sustained effort
+  // Minimum turn 8 to ensure players demonstrate survival knowledge first
   const navigationSuccessActions = ['retrace-trail', 'search-trail', 'follow-coast', 'find-exit', 'navigate-camp', 'backtrack-vehicle'];
-  if (navigationSuccessActions.includes(decision.id) && roll > 0.70) {
+  const navigationAttempts = state.history.filter(h =>
+    navigationSuccessActions.includes(h.decision.id)
+  ).length + 1; // +1 for current attempt
+
+  // Require: turn 8+, multiple navigation attempts, exceptional roll
+  const navigationThreshold = 0.88 - (navigationAttempts * 0.03); // Gets slightly easier with experience
+  if (navigationSuccessActions.includes(decision.id) &&
+      state.turnNumber >= 8 &&
+      navigationAttempts >= 2 &&
+      roll > navigationThreshold) {
     outcome.wasNavigationSuccess = true;
   }
 

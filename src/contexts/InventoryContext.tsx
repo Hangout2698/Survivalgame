@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { ITEM_DATABASE, calculateTotalWeight } from '../data/itemDatabase';
+import { ITEM_DATABASE } from '../data/itemDatabase';
 
 interface ItemState {
   id: string;
@@ -16,15 +16,15 @@ interface InventoryContextType {
   // Item states (for tracking uses)
   itemStates: Record<string, ItemState>;
 
-  // Max capacity (slots)
-  maxCapacity: number;
+  // Max items allowed (survival kit selection limit)
+  maxItems: number;
 
   // Actions
   selectItem: (itemId: string) => boolean;
   deselectItem: (itemId: string) => void;
   isSelected: (itemId: string) => boolean;
   canSelectItem: (itemId: string) => boolean;
-  getCurrentWeight: () => number;
+  getSelectedCount: () => number;
 
   // Consumption
   consumeItem: (itemId: string) => boolean;
@@ -48,10 +48,10 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [consumedItems, setConsumedItems] = useState<string[]>([]);
   const [itemStates, setItemStates] = useState<Record<string, ItemState>>({});
-  const maxCapacity = 3; // Player can carry 3 slots worth of items
+  const maxItems = 3; // Survival kit selection limit - forces hard choices
 
-  const getCurrentWeight = useCallback(() => {
-    return calculateTotalWeight(selectedItems);
+  const getSelectedCount = useCallback(() => {
+    return selectedItems.length;
   }, [selectedItems]);
 
   const canSelectItem = useCallback((itemId: string): boolean => {
@@ -61,10 +61,9 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     // Already selected
     if (selectedItems.includes(itemId)) return false;
 
-    // Check if adding this item would exceed capacity
-    const currentWeight = getCurrentWeight();
-    return (currentWeight + item.weight) <= maxCapacity;
-  }, [selectedItems, getCurrentWeight, maxCapacity]);
+    // Check if adding this item would exceed limit
+    return selectedItems.length < maxItems;
+  }, [selectedItems, maxItems]);
 
   const selectItem = useCallback((itemId: string): boolean => {
     if (!canSelectItem(itemId)) {
@@ -75,13 +74,13 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     const item = ITEM_DATABASE[itemId];
     setSelectedItems(prev => [...prev, itemId]);
 
-    // Initialize item state
-    if (item.isConsumable && item.uses) {
+    // Initialize item state for consumables and containers
+    if (item.initialUses !== undefined) {
       setItemStates(prev => ({
         ...prev,
         [itemId]: {
           id: itemId,
-          remainingUses: item.uses
+          remainingUses: item.initialUses
         }
       }));
     }
@@ -109,7 +108,10 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
 
   const consumeItem = useCallback((itemId: string): boolean => {
     const item = ITEM_DATABASE[itemId];
-    if (!item || !item.isConsumable) return false;
+    if (!item) return false;
+
+    // Persistent items without uses (tools) cannot be consumed
+    if (item.isPersistent && item.initialUses === undefined) return false;
 
     // Check if item is in inventory
     if (!selectedItems.includes(itemId)) return false;
@@ -118,15 +120,24 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     if (consumedItems.includes(itemId)) return false;
 
     const currentState = itemStates[itemId];
-    const remainingUses = currentState?.remainingUses ?? item.uses ?? 1;
+    const remainingUses = currentState?.remainingUses ?? item.initialUses ?? 1;
 
     if (remainingUses <= 1) {
-      // Last use - mark as consumed
-      setConsumedItems(prev => [...prev, itemId]);
-      setItemStates(prev => ({
-        ...prev,
-        [itemId]: { id: itemId, remainingUses: 0 }
-      }));
+      // Last use
+      if (item.isPersistent || item.isContainer) {
+        // Containers/persistent items: just decrement uses to 0, item stays in inventory
+        setItemStates(prev => ({
+          ...prev,
+          [itemId]: { id: itemId, remainingUses: 0 }
+        }));
+      } else {
+        // Non-persistent consumables: mark as consumed (removed from usable inventory)
+        setConsumedItems(prev => [...prev, itemId]);
+        setItemStates(prev => ({
+          ...prev,
+          [itemId]: { id: itemId, remainingUses: 0 }
+        }));
+      }
     } else {
       // Decrement uses
       setItemStates(prev => ({
@@ -145,10 +156,13 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
 
   const getRemainingUses = useCallback((itemId: string): number => {
     const item = ITEM_DATABASE[itemId];
-    if (!item.isConsumable) return Infinity;
 
+    // Persistent items without uses (pure tools) have infinite uses
+    if (item.isPersistent && item.initialUses === undefined) return Infinity;
+
+    // Items with uses (consumables and containers)
     const state = itemStates[itemId];
-    return state?.remainingUses ?? item.uses ?? 0;
+    return state?.remainingUses ?? item.initialUses ?? 0;
   }, [itemStates]);
 
   const hasItem = useCallback((itemId: string): boolean => {
@@ -213,12 +227,12 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     selectedItems,
     consumedItems,
     itemStates,
-    maxCapacity,
+    maxItems,
     selectItem,
     deselectItem,
     isSelected,
     canSelectItem,
-    getCurrentWeight,
+    getSelectedCount,
     consumeItem,
     isItemConsumed,
     getRemainingUses,

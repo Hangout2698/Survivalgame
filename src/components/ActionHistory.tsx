@@ -18,8 +18,9 @@ export function ActionHistory({ history, maxVisible = 5 }: ActionHistoryProps) {
     }
   }, [history.length]);
 
-  // Get most recent entries
+  // Get most recent entries with turn numbers
   const recentHistory = history.slice(-maxVisible);
+  const startingTurnNumber = Math.max(1, history.length - maxVisible + 1);
 
   if (recentHistory.length === 0) return null;
 
@@ -40,6 +41,7 @@ export function ActionHistory({ history, maxVisible = 5 }: ActionHistoryProps) {
               <ActionEntry
                 key={index}
                 entry={entry}
+                turnNumber={startingTurnNumber + index}
                 isLatest={index === recentHistory.length - 1}
               />
             ))}
@@ -52,10 +54,11 @@ export function ActionHistory({ history, maxVisible = 5 }: ActionHistoryProps) {
 
 interface ActionEntryProps {
   entry: DecisionOutcome;
+  turnNumber: number;
   isLatest: boolean;
 }
 
-function ActionEntry({ entry, isLatest }: ActionEntryProps) {
+function ActionEntry({ entry, turnNumber, isLatest }: ActionEntryProps) {
   const hasPositiveEffect = Object.entries(entry.metricsChange).some(
     ([key, value]) => {
       if (key === 'injurySeverity' || key === 'cumulativeRisk') {
@@ -91,9 +94,14 @@ function ActionEntry({ entry, isLatest }: ActionEntryProps) {
       <div className="flex items-start gap-2">
         <Icon className={`w-3 h-3 mt-0.5 flex-shrink-0 ${iconColor}`} />
         <div className="flex-1 min-w-0">
-          <p className="text-gray-300 leading-relaxed mb-1">
-            {entry.decision.text}
-          </p>
+          <div className="flex items-baseline justify-between gap-2 mb-1">
+            <p className="text-gray-300 leading-relaxed flex-1">
+              {entry.decision.text}
+            </p>
+            <span className="text-[10px] text-gray-500 font-mono flex-shrink-0">
+              T{turnNumber}
+            </span>
+          </div>
 
           {/* Show metric changes */}
           <div className="flex flex-wrap gap-2 text-[10px]">

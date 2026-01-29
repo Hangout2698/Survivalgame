@@ -1,8 +1,14 @@
 /**
  * Item Database - All available equipment for pre-game loadout
+ *
+ * DESIGN PHILOSOPHY:
+ * This is NOT about realistic carrying capacity - it's about forcing deliberate
+ * survival kit selection. The limit exists as a training/gameplay constraint,
+ * not physical realism. In reality, you could carry all these items, but in
+ * survival training you practice with limited kits to force hard choices.
  */
 
-export type ItemCategory = 'warmth' | 'fire' | 'water' | 'medical' | 'signaling' | 'shelter' | 'tool';
+export type ItemCategory = 'warmth' | 'fire' | 'water' | 'medical' | 'signaling' | 'shelter' | 'tool' | 'food';
 
 export interface GameItem {
   id: string;
@@ -10,9 +16,9 @@ export interface GameItem {
   category: ItemCategory;
   description: string;
   icon: string; // Emoji icon
-  weight: number; // Slot cost (most items = 1, heavy items = 2)
-  isConsumable: boolean;
-  uses?: number; // For consumables
+  isPersistent: boolean; // Tools stay with you; consumables get used up
+  isContainer: boolean; // Containers (like water bottle) stay but contents are consumed
+  initialUses?: number; // For consumables/containers - how many uses start with
   benefits: {
     // What this item enables
     enablesChoices?: string[]; // Decision IDs this unlocks
@@ -35,8 +41,8 @@ export const ITEM_DATABASE: Record<string, GameItem> = {
     category: 'warmth',
     description: 'Emergency thermal blanket. Reflects 90% of body heat.',
     icon: '🛡️',
-    weight: 1,
-    isConsumable: false,
+    isPersistent: true, // Tool - stays with you
+    isContainer: false,
     benefits: {
       bonuses: {
         bodyHeat: 15 // Passive bonus
@@ -52,8 +58,8 @@ export const ITEM_DATABASE: Record<string, GameItem> = {
     category: 'fire',
     description: 'Reliable fire starter. 100% success rate for fires.',
     icon: '🔥',
-    weight: 1,
-    isConsumable: false,
+    isPersistent: true, // Tool - stays with you
+    isContainer: false,
     benefits: {
       enablesChoices: ['start-fire-lighter', 'signal-fire'],
       successRateBonus: 100 // Guaranteed fire success
@@ -63,20 +69,20 @@ export const ITEM_DATABASE: Record<string, GameItem> = {
 
   waterBottle: {
     id: 'waterBottle',
-    name: '1L Water Bottle',
+    name: '1L Water Bottle (Full)',
     category: 'water',
-    description: 'Clean drinking water. One-time use restores 40 hydration.',
+    description: 'Container + clean water. Bottle stays with you; water is one-time use. Enables water collection.',
     icon: '💧',
-    weight: 1,
-    isConsumable: true,
-    uses: 1,
+    isPersistent: true, // Container - stays with you forever
+    isContainer: true, // Special: contents consumed, container remains
+    initialUses: 1, // Starts with clean water
     benefits: {
-      enablesChoices: ['drink-water-bottle'],
+      enablesChoices: ['drink-water-bottle', 'collect-water', 'purify-water'],
       bonuses: {
-        hydration: 40
+        hydration: 40 // Per use of clean water
       }
     },
-    strategicValue: 'Immediate hydration boost. Buys time to find water sources.'
+    strategicValue: 'CONTAINER + initial water. Bottle enables long-term water collection and purification. Essential survival tool.'
   },
 
   signalingMirror: {
@@ -85,8 +91,8 @@ export const ITEM_DATABASE: Record<string, GameItem> = {
     category: 'signaling',
     description: 'Can be seen 10+ miles away. Best for daytime rescue.',
     icon: '🪞',
-    weight: 1,
-    isConsumable: false,
+    isPersistent: true, // Tool - stays with you
+    isContainer: false,
     benefits: {
       enablesChoices: ['use-mirror', 'signal-aircraft'],
       successRateBonus: 60 // Major boost to rescue chances
@@ -100,9 +106,9 @@ export const ITEM_DATABASE: Record<string, GameItem> = {
     category: 'medical',
     description: 'Bandages, antiseptic, painkillers. Treats injuries completely.',
     icon: '⚕️',
-    weight: 1,
-    isConsumable: true,
-    uses: 2, // Can use twice
+    isPersistent: false, // Consumable - gets used up
+    isContainer: false,
+    initialUses: 2, // Can use twice
     benefits: {
       enablesChoices: ['treat-injury-full'],
       bonuses: {
@@ -118,15 +124,15 @@ export const ITEM_DATABASE: Record<string, GameItem> = {
     category: 'warmth',
     description: 'Heavy-duty winter coat. Major passive warmth bonus.',
     icon: '🧥',
-    weight: 2, // Takes 2 slots!
-    isConsumable: false,
+    isPersistent: true, // Tool - stays with you
+    isContainer: false,
     benefits: {
       bonuses: {
         bodyHeat: 25, // Best passive warmth
         morale: 5 // Comfort bonus
       }
     },
-    strategicValue: 'Best warmth option but costs 2 slots. Trade-off between warmth and versatility.'
+    strategicValue: 'Best warmth option. Provides superior insulation in cold environments.'
   },
 
   emergencyWhistle: {
@@ -135,8 +141,8 @@ export const ITEM_DATABASE: Record<string, GameItem> = {
     category: 'signaling',
     description: 'Can be heard 1 mile away. Works day or night.',
     icon: '📣',
-    weight: 1,
-    isConsumable: false,
+    isPersistent: true, // Tool - stays with you
+    isContainer: false,
     benefits: {
       enablesChoices: ['use-whistle'],
       successRateBonus: 30
@@ -150,8 +156,8 @@ export const ITEM_DATABASE: Record<string, GameItem> = {
     category: 'tool',
     description: 'Knife, saw, can opener. Enables multiple survival tasks.',
     icon: '🔪',
-    weight: 1,
-    isConsumable: false,
+    isPersistent: true, // Tool - stays with you
+    isContainer: false,
     benefits: {
       enablesChoices: ['build-shelter-advanced', 'create-spear', 'cut-branches'],
       successRateBonus: 25 // Better at many tasks
@@ -165,8 +171,8 @@ export const ITEM_DATABASE: Record<string, GameItem> = {
     category: 'shelter',
     description: 'Military-grade rope. Essential for building shelters.',
     icon: '🪢',
-    weight: 1,
-    isConsumable: false,
+    isPersistent: true, // Tool - stays with you
+    isContainer: false,
     benefits: {
       enablesChoices: ['build-tarp-shelter', 'create-snare'],
       successRateBonus: 35 // Much better shelters
@@ -177,12 +183,12 @@ export const ITEM_DATABASE: Record<string, GameItem> = {
   energyBars: {
     id: 'energyBars',
     name: 'Energy Bars (3x)',
-    category: 'water', // Using water as generic supplies
+    category: 'food',
     description: 'High-calorie food. Restores 30 energy per bar.',
     icon: '🍫',
-    weight: 1,
-    isConsumable: true,
-    uses: 3,
+    isPersistent: false, // Consumable - gets used up
+    isContainer: false,
+    initialUses: 3,
     benefits: {
       enablesChoices: ['eat-energy-bar'],
       bonuses: {
@@ -197,14 +203,6 @@ export const ITEM_DATABASE: Record<string, GameItem> = {
 // Helper function to get items by category
 export function getItemsByCategory(category: ItemCategory): GameItem[] {
   return Object.values(ITEM_DATABASE).filter(item => item.category === category);
-}
-
-// Helper to calculate total weight of selected items
-export function calculateTotalWeight(itemIds: string[]): number {
-  return itemIds.reduce((total, id) => {
-    const item = ITEM_DATABASE[id];
-    return total + (item?.weight || 0);
-  }, 0);
 }
 
 // Get all available items for loadout screen
