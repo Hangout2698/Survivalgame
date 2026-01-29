@@ -14,7 +14,18 @@
       "Bash(npm audit:*)",
       "Bash(node --version:*)",
       "Bash(npm --version)",
-      "Bash(npx update-browserslist-db@latest)"
+      "Bash(npx update-browserslist-db@latest)",
+      "Bash(curl:*)",
+      "Bash(ls:*)",
+      "Bash(npm run lint)",
+      "Bash(npm update:*)",
+      "Bash(claude doctor:*)",
+      "Bash(claude:*)",
+      "Bash(npm install:*)",
+      "Bash(test:*)",
+      "Bash(xargs:*)",
+      "Bash(git rm:*)",
+      "Bash(git restore:*)"
     ]
   }
 }
