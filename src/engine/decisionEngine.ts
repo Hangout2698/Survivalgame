@@ -34,10 +34,11 @@ function scaleEnergyCost(baseCost: number, riskLevel: number, state: GameState):
     }
   }
 
+  // Reduced penalties to improve energy economy (was 1.4 and 1.2)
   if (energy < 30 || hydration < 30 || injurySeverity > 50) {
-    return baseCost * 1.4;
+    return baseCost * 1.3; // 30% penalty when exhausted
   } else if (energy < 50 || hydration < 50 || injurySeverity > 30) {
-    return baseCost * 1.2;
+    return baseCost * 1.15; // 15% penalty when fatigued
   }
 
   return baseCost;
@@ -127,7 +128,7 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
         decisions.push({
           id: 'retrace-trail',
           text: 'Retrace your steps to find the trail',
-          energyCost: 35,
+          energyCost: 30, // Reduced from 35 to improve energy economy
           riskLevel: 5,
           timeRequired: 3,
           environmentalHint: 'Alpine terrain is disorienting - recent footprints may still be visible'
@@ -138,7 +139,7 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
         decisions.push({
           id: 'descend',
           text: 'Descend carefully toward lower elevation',
-          energyCost: 40,
+          energyCost: 35, // Reduced from 40 to improve energy economy
           riskLevel: 7,
           timeRequired: 4,
           environmentalHint: 'Lower elevation means warmer temperatures, but steep terrain increases fall risk'
@@ -171,7 +172,7 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
         decisions.push({
           id: 'follow-coast',
           text: 'Travel north along coast toward trail',
-          energyCost: 35,
+          energyCost: 30, // Reduced from 35 to improve energy economy
           riskLevel: 6,
           timeRequired: 3,
           environmentalHint: scenario.weather === 'storm'
@@ -263,7 +264,7 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
         decisions.push({
           id: 'search-trail',
           text: 'Search systematically for the trail',
-          energyCost: 35,
+          energyCost: 30, // Reduced from 35 to improve energy economy
           riskLevel: 5,
           timeRequired: 3,
           environmentalHint: 'Dense forest makes navigation difficult - mark your path to avoid walking in circles'
@@ -521,6 +522,27 @@ function getEquipmentBasedDecisions(state: GameState): Decision[] {
     });
   }
 
+  // Foraging for food (environment-dependent)
+  if (metrics.energy > 20) {
+    const foragingHints: Record<string, string> = {
+      'mountains': 'Alpine berries and edible roots sparse but nutritious at high elevation',
+      'desert': 'Cacti fruit and succulent plants - beware of toxic varieties',
+      'forest': 'Abundant berries, mushrooms, and edible plants under tree cover',
+      'coast': 'Seaweed, shellfish, and coastal plants available at tide pools',
+      'tundra': 'Lichen, arctic berries, and roots - limited but sufficient nutrition',
+      'urban-edge': 'Wild plants in abandoned gardens, fruit trees, edible weeds'
+    };
+
+    decisions.push({
+      id: 'forage-food',
+      text: 'Forage for edible plants and berries',
+      energyCost: 18,
+      riskLevel: 3,
+      timeRequired: 2,
+      environmentalHint: foragingHints[state.currentEnvironment]
+    });
+  }
+
   return decisions;
 }
 
@@ -683,8 +705,8 @@ function getWaterPurificationDecisions(state: GameState): Decision[] {
     });
   }
 
-  // Purifying water
-  if (hasUntreatedWater && metrics.fireQuality > 50) {
+  // Purifying water (now possible with smoldering fire)
+  if (hasUntreatedWater && metrics.fireQuality > 25) {
     decisions.push({
       id: 'boil-water',
       text: 'Boil water to purify',
@@ -802,6 +824,7 @@ function getPrincipleBasedDecisions(state: GameState): Decision[] {
 export function generateDecisions(state: GameState): Decision[] {
   const { scenario, metrics, turnNumber } = state;
   const decisions: Decision[] = [];
+  const criticalDecisions: Decision[] = [];
 
   const environmentDecisions = getEnvironmentSpecificDecisions(state);
   decisions.push(...environmentDecisions);
@@ -848,14 +871,21 @@ export function generateDecisions(state: GameState): Decision[] {
     'urban-edge': 'Rest in stable shelter - urban structures provide better protection than wilderness'
   };
 
-  decisions.push({
+  const restDecision: Decision = {
     id: 'rest',
     text: 'Rest to recover energy',
-    energyCost: -25,
+    energyCost: -35, // Increased from -25 to improve energy economy
     riskLevel: 1,
     timeRequired: 2,
     environmentalHint: restHints[state.currentEnvironment]
-  });
+  };
+
+  // If energy is critical, prioritize rest decision
+  if (metrics.energy < 20) {
+    criticalDecisions.push(restDecision);
+  } else {
+    decisions.push(restDecision);
+  }
 
   if (scenario.weather === 'storm' || scenario.weather === 'snow') {
     const fortifyHints: Record<string, string> = {
@@ -1071,7 +1101,53 @@ export function generateDecisions(state: GameState): Decision[] {
     });
   }
 
-  return decisions.slice(0, 6);
+  // Prioritize critical recovery decisions based on dangerous metric levels
+  // Extract critical decisions from the main list
+  const criticalRecoveryIds = new Set<string>();
+
+  if (metrics.energy < 20) {
+    criticalRecoveryIds.add('rest');
+    criticalRecoveryIds.add('eat-food');
+    criticalRecoveryIds.add('forage-food'); // Added: forage for food when energy critical
+    criticalRecoveryIds.add('rest-and-reflect');
+    criticalRecoveryIds.add('optimized-rest');
+  }
+
+  if (metrics.hydration < 20) {
+    criticalRecoveryIds.add('drink-clean-water');
+    criticalRecoveryIds.add('drink-untreated-water');
+    criticalRecoveryIds.add('collect-water'); // Fixed: correct decision ID
+  }
+
+  if (metrics.injurySeverity > 60) {
+    criticalRecoveryIds.add('treat-injury-full');
+    criticalRecoveryIds.add('treat-injury-partial');
+    criticalRecoveryIds.add('basic-injury-care');
+  }
+
+  if (metrics.bodyTemperature < 35 || metrics.bodyTemperature > 39) {
+    criticalRecoveryIds.add('shelter');
+    criticalRecoveryIds.add('start-fire');
+    criticalRecoveryIds.add('improve-shelter');
+    criticalRecoveryIds.add('rest'); // Rest in shelter helps body temperature
+  }
+
+  // Separate critical from normal decisions
+  const normalDecisions = decisions.filter(d => !criticalRecoveryIds.has(d.id));
+  const extractedCriticalDecisions = decisions.filter(d => criticalRecoveryIds.has(d.id));
+
+  // Combine: criticalDecisions (marked earlier) + extractedCriticalDecisions + normalDecisions
+  const finalDecisions = [...criticalDecisions, ...extractedCriticalDecisions, ...normalDecisions];
+
+  // Remove duplicates while preserving order (critical decisions first)
+  const seen = new Set<string>();
+  const uniqueDecisions = finalDecisions.filter(d => {
+    if (seen.has(d.id)) return false;
+    seen.add(d.id);
+    return true;
+  });
+
+  return uniqueDecisions.slice(0, 6);
 }
 
 export function applyDecision(decision: Decision, state: GameState): DecisionOutcome {
@@ -1087,8 +1163,10 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
 
   // Calculate morale modifier affecting success rates
   // Low morale increases accident/failure risk, high morale improves outcomes
-  const moraleModifier = (state.metrics.morale - 50) / 100; // -0.5 to +0.5
-  const moraleSuccessAdjustment = moraleModifier * 0.2; // ±10% swing on success rolls
+  let moraleModifier = (state.metrics.morale - 50) / 100; // -0.5 to +0.5
+  // Cap negative morale penalty at -0.25 (was -0.5) to prevent death spirals
+  if (moraleModifier < -0.25) moraleModifier = -0.25;
+  const moraleSuccessAdjustment = moraleModifier * 0.2; // ±5-10% swing on success rolls
 
   const roll = Math.random() + successBonus + moraleSuccessAdjustment;
   const actualEnergyCost = scaleEnergyCost(decision.energyCost, decision.riskLevel, state);
@@ -1198,11 +1276,7 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
           : 'You slip on loose rock. The fall is hard.';
         consequences.push('You are injured and shaken.');
         metricsChange.morale = -15;
-        delayedEffects.push({
-          turn: state.turnNumber + 2,
-          effect: 'The injury from your fall is worsening.',
-          metricsChange: { energy: -12, morale: -8 }
-        });
+        // Removed delayed injury effect to prevent unavoidable death spirals
       } else if (roll > 0.8 && state.turnNumber > 6) {
         immediateEffect = 'You descend carefully and spot signs of a trail below.';
         consequences.push('You might have found a way down.');
@@ -1602,7 +1676,12 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
         morale: 5
       };
 
-      if (state.metrics.shelter > 50) {
+      // Passive injury healing when resting in good shelter
+      if (state.metrics.shelter > 60 && state.metrics.injurySeverity > 0) {
+        metricsChange.injurySeverity = -5; // Heal 5 injury per rest
+        immediateEffect = 'You rest in your shelter. Your energy recovers and injuries heal.';
+        consequences.push('Good shelter allows for effective rest and recovery.');
+      } else if (state.metrics.shelter > 50) {
         immediateEffect = 'You rest in your shelter. Your energy recovers well.';
         consequences.push('Good shelter allows for effective rest.');
       } else {
@@ -1654,11 +1733,7 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       if (roll < 0.5) {
         metricsChange.injurySeverity = 25;
         consequences.push('You fall hard. Something might be broken.');
-        delayedEffects.push({
-          turn: state.turnNumber + 1,
-          effect: 'The injury from your fall is worse than you realized.',
-          metricsChange: { energy: -15, morale: -10, injurySeverity: 15 }
-        });
+        // Removed delayed injury effect to prevent unavoidable death spirals
       } else {
         consequences.push('You cover ground but have no idea if you are heading the right direction.');
       }
@@ -1732,19 +1807,50 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       break;
 
     case 'eat-food':
-      const foodItem = state.equipment.find(e => e.name.includes('Energy bar') || e.name.includes('Berries') || e.name.toLowerCase().includes('food'));
-      const isEnergyBar = foodItem?.name.includes('Energy bar');
-      const energyGain = isEnergyBar ? 30 : 18;
+      const foodItem = state.equipment.find(e =>
+        e.name.includes('Energy bar') ||
+        e.name.includes('berries') ||
+        e.name.includes('Berries') ||
+        e.name.includes('mushrooms') ||
+        e.name.includes('fruit') ||
+        e.name.includes('roots') ||
+        e.name.includes('lichen') ||
+        e.name.includes('seaweed') ||
+        e.name.includes('weeds') ||
+        e.name.includes('succulents') ||
+        e.name.toLowerCase().includes('food')
+      );
+
+      // Energy gain varies by food type
+      let energyGain = 18; // Default for foraged food
+      let hydrationChange = -2; // Most food is dry
+      let moraleGain = 5;
+
+      if (foodItem?.name.includes('Energy bar')) {
+        energyGain = 30;
+        hydrationChange = 0;
+        moraleGain = 8;
+      } else if (foodItem?.name.includes('mushrooms') || foodItem?.name.includes('roots')) {
+        energyGain = 22; // More substantial
+        hydrationChange = -1;
+        moraleGain = 6;
+      } else if (foodItem?.name.includes('fruit') || foodItem?.name.includes('berries')) {
+        energyGain = 18;
+        hydrationChange = 2; // Fruit provides hydration
+        moraleGain = 7;
+      } else if (foodItem?.name.includes('seaweed') || foodItem?.name.includes('lichen')) {
+        energyGain = 12; // Less nutritious
+        hydrationChange = 1;
+        moraleGain = 3;
+      }
 
       metricsChange = {
         energy: energyGain - decision.energyCost,
-        morale: isEnergyBar ? 8 : 5,
-        hydration: isEnergyBar ? 0 : -2
+        morale: moraleGain,
+        hydration: hydrationChange
       };
 
-      immediateEffect = isEnergyBar
-        ? 'You eat an energy bar. Your energy increases significantly.'
-        : 'You eat the berries. They provide nourishment.';
+      immediateEffect = `You eat the ${foodItem?.name.toLowerCase()}. Your energy increases.`;
       consequences.push(`You gain ${energyGain} energy.`);
 
       if (foodItem) {
@@ -1758,6 +1864,95 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
           equipmentChanges.removed = [foodItem.name];
           consequences.push('That was your last food.');
         }
+      }
+      break;
+
+    case 'forage-food':
+      // Environment affects foraging success and food type
+      let foragingSuccessThreshold = 0.3; // Base 70% success
+      let foodType = 'Wild berries';
+      let foodQuantity = 1;
+      let poisonRisk = 0; // Chance of getting poisonous plant
+      let environmentContext = '';
+
+      switch (state.currentEnvironment) {
+        case 'forest':
+          foragingSuccessThreshold = 0.3; // 70% success - abundant
+          foodType = roll > 0.7 ? 'Wild mushrooms (edible)' : 'Wild berries';
+          foodQuantity = roll > 0.6 ? 2 : 1;
+          poisonRisk = 0.08; // 8% risk of poisonous mushrooms
+          environmentContext = 'The forest floor is rich with edible plants.';
+          break;
+
+        case 'mountains':
+          foragingSuccessThreshold = 0.6; // 40% success - sparse
+          foodType = roll > 0.5 ? 'Alpine berries' : 'Edible roots';
+          foodQuantity = 1;
+          poisonRisk = 0.05; // 5% risk
+          environmentContext = 'Alpine vegetation is limited but present.';
+          break;
+
+        case 'desert':
+          foragingSuccessThreshold = 0.85; // 15% success - very rare
+          foodType = roll > 0.6 ? 'Cacti fruit' : 'Desert succulents';
+          foodQuantity = 1;
+          poisonRisk = 0.25; // 25% risk - many toxic plants
+          environmentContext = 'Desert plants are scarce and often dangerous.';
+          break;
+
+        case 'coast':
+          foragingSuccessThreshold = 0.45; // 55% success - moderate
+          foodType = roll > 0.6 ? 'Edible seaweed' : 'Coastal berries';
+          foodQuantity = roll > 0.7 ? 2 : 1;
+          poisonRisk = 0.10; // 10% risk
+          environmentContext = 'Coastal areas provide diverse food sources.';
+          break;
+
+        case 'tundra':
+          foragingSuccessThreshold = 0.75; // 25% success - very sparse
+          foodType = roll > 0.5 ? 'Arctic lichen' : 'Tundra berries';
+          foodQuantity = 1;
+          poisonRisk = 0.05; // 5% risk
+          environmentContext = 'Tundra vegetation is minimal but edible.';
+          break;
+
+        case 'urban-edge':
+          foragingSuccessThreshold = 0.5; // 50% success - variable
+          foodType = roll > 0.6 ? 'Fruit from wild trees' : 'Edible weeds';
+          foodQuantity = roll > 0.8 ? 2 : 1;
+          poisonRisk = 0.12; // 12% risk - contamination
+          environmentContext = 'Abandoned gardens and wild growth offer food.';
+          break;
+      }
+
+      metricsChange = {
+        energy: -actualEnergyCost,
+        hydration: -3,
+        morale: 5
+      };
+
+      // Check for poison first
+      if (roll < poisonRisk) {
+        immediateEffect = `You gather plants but realize they are toxic. ${environmentContext}`;
+        consequences.push('You discard them quickly after recognizing the danger.');
+        metricsChange.morale = -8;
+        metricsChange.energy = -actualEnergyCost - 5; // Extra energy loss from wasted effort
+      } else if (roll < foragingSuccessThreshold) {
+        // Failed foraging
+        immediateEffect = `You search extensively but find no edible plants. ${environmentContext}`;
+        consequences.push('Your foraging effort yields nothing safe to eat.');
+        metricsChange.morale = -6;
+      } else if (roll > 0.85) {
+        // Excellent success
+        immediateEffect = `You find abundant ${foodType.toLowerCase()}! ${environmentContext}`;
+        consequences.push('Your knowledge of wild edibles pays off.');
+        equipmentChanges.added = [{ name: foodType, quantity: foodQuantity + 1, condition: 'good' as const }];
+        metricsChange.morale = 12;
+      } else {
+        // Normal success
+        immediateEffect = `You successfully forage ${foodType.toLowerCase()}. ${environmentContext}`;
+        consequences.push('The food should help sustain you.');
+        equipmentChanges.added = [{ name: foodType, quantity: foodQuantity, condition: 'good' as const }];
       }
       break;
 
@@ -2607,11 +2802,7 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
         metricsChange.injurySeverity = 35;
         metricsChange.morale = -20;
         metricsChange.energy = -70; // Exhausted from trauma
-        delayedEffects.push({
-          turn: state.turnNumber + 1,
-          effect: 'The injury from the fall is throbbing and limiting movement.',
-          metricsChange: { energy: -15, morale: -10 }
-        });
+        // Removed delayed injury effect to prevent unavoidable death spirals
       } else {
         immediateEffect = 'You lose your grip and fall hard. The impact is severe.';
         consequences.push('CRITICAL INJURY. This was a devastating mistake.');
@@ -2619,11 +2810,7 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
         metricsChange.morale = -30;
         metricsChange.energy = -80;
         metricsChange.cumulativeRisk = 40;
-        delayedEffects.push({
-          turn: state.turnNumber + 1,
-          effect: 'The severe injury is worsening. Survival is now critical.',
-          metricsChange: { injurySeverity: 15, energy: -20, morale: -15 }
-        });
+        // Removed delayed injury effect to prevent unavoidable death spirals
       }
       break;
 
@@ -2910,8 +3097,8 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
     navigationSuccessActions.includes(h.decision.id)
   ).length + 1; // +1 for current attempt
 
-  // Require: turn 8+, multiple navigation attempts, exceptional roll
-  const navigationThreshold = 0.88 - (navigationAttempts * 0.03); // Gets slightly easier with experience
+  // Require: turn 8+, multiple navigation attempts, good roll
+  const navigationThreshold = 0.70 - (navigationAttempts * 0.03); // Gets slightly easier with experience (reduced from 0.88)
   if (navigationSuccessActions.includes(decision.id) &&
       state.turnNumber >= 8 &&
       navigationAttempts >= 2 &&

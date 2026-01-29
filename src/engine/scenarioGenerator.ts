@@ -52,11 +52,40 @@ function randomInt(min: number, max: number): number {
 }
 
 function selectRandomEquipment(): Equipment[] {
-  const count = randomInt(2, 4);
-  const selected: Equipment[] = [];
-  const shuffled = [...equipmentPool].sort(() => Math.random() - 0.5);
+  // Categorize equipment to ensure balanced loadouts
+  const fireStarters = ['Lighter', 'Matches', 'Tinder bundle'];
+  const waterItems = ['Water bottle (half full)'];
+  const signalingItems = ['Signal mirror', 'Whistle', 'Flashlight'];
 
-  for (let i = 0; i < count && i < shuffled.length; i++) {
+  const selected: Equipment[] = [];
+
+  // Guarantee at least one item from critical categories
+  // Fire starter (80% chance for good starter, 20% for just tinder)
+  const firePool = equipmentPool.filter(e => fireStarters.includes(e.name));
+  if (Math.random() > 0.2) {
+    const goodStarters = firePool.filter(e => e.name === 'Lighter' || e.name === 'Matches');
+    selected.push({ ...random(goodStarters) });
+  } else {
+    const tinderOnly = firePool.filter(e => e.name === 'Tinder bundle');
+    selected.push({ ...tinderOnly[0] });
+  }
+
+  // Water (guaranteed)
+  const waterPool = equipmentPool.filter(e => waterItems.includes(e.name));
+  selected.push({ ...random(waterPool) });
+
+  // Signaling (guaranteed)
+  const signalPool = equipmentPool.filter(e => signalingItems.includes(e.name));
+  selected.push({ ...random(signalPool) });
+
+  // Add 1-2 more random items from remaining pool
+  const remainingPool = equipmentPool.filter(e =>
+    !selected.some(s => s.name === e.name)
+  );
+  const additionalCount = randomInt(1, 2);
+  const shuffled = [...remainingPool].sort(() => Math.random() - 0.5);
+
+  for (let i = 0; i < additionalCount && i < shuffled.length; i++) {
     selected.push({ ...shuffled[i] });
   }
 

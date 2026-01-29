@@ -146,8 +146,8 @@ export function applyEnvironmentalEffects(
 
   // EARLY GAME DIFFICULTY: First 8 turns are about establishing basics
   // Players face harsher conditions until they've built shelter, fire, etc.
-  const earlyGameMultiplier = turnNumber <= 8 ? 1.0 + (9 - turnNumber) * 0.08 : 1.0;
-  // Turn 1: 1.64x harsh, Turn 5: 1.32x, Turn 8: 1.08x, Turn 9+: 1.0x
+  const earlyGameMultiplier = turnNumber <= 8 ? 1.0 + (9 - turnNumber) * 0.04 : 1.0;
+  // Turn 1: 1.32x harsh, Turn 5: 1.16x, Turn 8: 1.04x, Turn 9+: 1.0x (reduced from 0.08 multiplier)
 
   // Principle: "Wet clothing loses insulating properties and accelerates hypothermia"
   // Wetness reduces shelter effectiveness
@@ -201,12 +201,12 @@ export function applyEnvironmentalEffects(
   // Fire degradation based on weather
   if (metrics.fireQuality > 0) {
     const shelterProtection = (metrics.shelter / 100) * 0.6; // Up to 60% protection
-    let fireDegradation = -8; // Base degradation per turn
+    let fireDegradation = -5; // Base degradation per turn (reduced from -8)
 
     if (scenario.weather === 'rain') {
-      fireDegradation -= 15;
+      fireDegradation -= 10; // Capped at -10 (reduced from -15)
     } else if (scenario.weather === 'storm' || scenario.weather === 'snow') {
-      fireDegradation -= 20;
+      fireDegradation -= 10; // Capped at -10 (reduced from -20)
     } else if (scenario.weather === 'wind') {
       fireDegradation -= 5;
     }
@@ -223,15 +223,15 @@ export function applyEnvironmentalEffects(
 
     if (metrics.fireQuality >= 76) {
       // Strong fire
-      fireWarmth = 1.5;
+      fireWarmth = 2.0; // Increased from 1.5
       fireMorale = 2.0; // Strong fire provides significant psychological comfort
     } else if (metrics.fireQuality >= 51) {
       // Burning
-      fireWarmth = 0.8;
+      fireWarmth = 1.0; // Increased from 0.8
       fireMorale = 1.2; // Burning fire provides good psychological comfort
     } else {
       // Smoldering
-      fireWarmth = 0.3;
+      fireWarmth = 0.4; // Increased from 0.3
       fireMorale = 0.5; // Smoldering fire provides minimal comfort
     }
 
@@ -263,6 +263,12 @@ export function applyEnvironmentalEffects(
   } else if (metrics.bodyTemperature > 39) {
     changes.morale = (changes.morale || 0) - 2;
     changes.energy = (changes.energy || 0) - 2;
+  }
+
+  // Passive morale recovery when well-sheltered with fire
+  // Having good shelter and fire provides psychological comfort
+  if (metrics.shelter > 60 && metrics.fireQuality > 50) {
+    changes.morale = (changes.morale || 0) + 2; // +2 morale per turn
   }
 
   if (metrics.morale < 30) {
@@ -455,7 +461,7 @@ export function checkEndConditions(state: GameState): {
   const navigationAttempts = state.history.filter(h => h.wasNavigationSuccess).length;
   const lastOutcome = state.history[state.history.length - 1];
 
-  if (state.turnNumber >= 10 && navigationAttempts >= 3 && lastOutcome?.wasNavigationSuccess && m.energy > 20) {
+  if (state.turnNumber >= 8 && navigationAttempts >= 2 && lastOutcome?.wasNavigationSuccess && m.energy > 20) {
     return {
       ended: true,
       outcome: 'survived',
@@ -463,9 +469,9 @@ export function checkEndConditions(state: GameState): {
     };
   }
 
-  // SIGNAL-BASED RESCUE: Requires minimum 12 turns and 5 successful signals
+  // SIGNAL-BASED RESCUE: Requires minimum 8 turns and 3 successful signals
   // This ensures players must demonstrate comprehensive survival knowledge first
-  if (state.turnNumber >= 12 && successfulSignals >= 5 && m.signalEffectiveness > 60 && m.survivalProbability > 50) {
+  if (state.turnNumber >= 8 && successfulSignals >= 3 && m.signalEffectiveness > 60 && m.survivalProbability > 50) {
     return {
       ended: true,
       outcome: 'survived',
@@ -473,8 +479,8 @@ export function checkEndConditions(state: GameState): {
     };
   }
 
-  // HIGH-QUALITY EARLY RESCUE: Still requires turn 10+ and exceptional conditions
-  if (state.turnNumber >= 10 && successfulSignals >= 4 && m.signalEffectiveness > 75 && m.survivalProbability > 65) {
+  // HIGH-QUALITY EARLY RESCUE: Still requires turn 6+ and exceptional conditions
+  if (state.turnNumber >= 6 && successfulSignals >= 2 && m.signalEffectiveness > 75 && m.survivalProbability > 65) {
     return {
       ended: true,
       outcome: 'survived',
