@@ -80,6 +80,14 @@ export function EnhancedDecisionCard({ decision, gameState, onSelect, disabled =
               {decision.text}
             </h3>
 
+            {/* Environmental Hint */}
+            {decision.environmentalHint && (
+              <div className="mt-2 mb-3 px-2 md:px-3 py-1.5 md:py-2 bg-blue-900/20 border border-blue-700/30 rounded text-xs md:text-sm text-blue-300 flex items-start gap-2">
+                <Info className="w-3 h-3 md:w-4 md:h-4 mt-0.5 flex-shrink-0" />
+                <span>{decision.environmentalHint}</span>
+              </div>
+            )}
+
             {/* Effort and Time Row - Simplified on mobile */}
             <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3 flex-wrap">
               <div className={`px-2 md:px-3 py-1 rounded-full border-2 ${effortStyle.badge} font-bold text-xs md:text-sm whitespace-nowrap`}>

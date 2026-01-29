@@ -1,9 +1,10 @@
-import type { GameState, Decision, TimeOfDay, PlayerMetrics } from '../types/game';
+import type { GameState, Decision, TimeOfDay, PlayerMetrics, Equipment } from '../types/game';
 import { generateScenario } from './scenarioGenerator';
 import { initializeMetrics, updateMetrics, checkEndConditions } from './metricsSystem';
 import { generateDecisions, applyDecision } from './decisionEngine';
 import { analyzeSurvivalPerformance } from './survivalRules';
 import { loadActiveSurvivalGuide } from './survivalGuideService';
+import { generatePersonalizedLessons, identifyMissedOpportunities } from './lessonGenerator';
 
 // Time constants - extracted to avoid duplication
 const TIME_SEQUENCE: TimeOfDay[] = ['dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night'];
@@ -77,7 +78,10 @@ function calculateTimeUntilDuskOrDawn(currentTime: TimeOfDay): string {
   }
 }
 
-export async function createNewGame(providedScenario?: ReturnType<typeof generateScenario>): Promise<GameState> {
+export async function createNewGame(
+  providedScenario?: ReturnType<typeof generateScenario>,
+  providedEquipment?: Equipment[]
+): Promise<GameState> {
   const scenario = providedScenario || generateScenario();
   const metrics = initializeMetrics(scenario);
   const survivalGuide = await loadActiveSurvivalGuide();
@@ -86,7 +90,7 @@ export async function createNewGame(providedScenario?: ReturnType<typeof generat
     id: crypto.randomUUID(),
     scenario,
     metrics,
-    equipment: [...scenario.equipment],
+    equipment: providedEquipment || [...scenario.equipment],
     turnNumber: 1,
     currentTimeOfDay: scenario.timeOfDay,
     hoursElapsed: 0,
@@ -146,7 +150,20 @@ export function makeDecision(state: GameState, decision: Decision): GameState {
     cumulativeRisk: (outcome.metricsChange.cumulativeRisk || 0) + (delayedMetricsChange.cumulativeRisk || 0)
   };
 
-  const updatedMetrics = updateMetrics(state.metrics, combinedMetricsChange, state.scenario);
+  const { metrics: updatedMetrics, thresholdCrossing } = updateMetrics(
+    state.metrics,
+    combinedMetricsChange,
+    state.scenario,
+    state.turnNumber,
+    decision.text,
+    decision.id
+  );
+
+  // Store threshold crossings for causality tracking
+  let updatedCrossings = [...(state.metricThresholdCrossings || [])];
+  if (thresholdCrossing) {
+    updatedCrossings.push(thresholdCrossing);
+  }
 
   const timeProgression = progressTime(state.currentTimeOfDay, decision.timeRequired);
 
@@ -249,7 +266,8 @@ export function makeDecision(state: GameState, decision: Decision): GameState {
     goodDecisions: updatedGoodDecisions,
     poorDecisions: updatedPoorDecisions,
     principleAlignmentScore: updatedAlignmentScore,
-    discoveredPrinciples: updatedDiscoveredPrinciples
+    discoveredPrinciples: updatedDiscoveredPrinciples,
+    metricThresholdCrossings: updatedCrossings
   };
 
   const endCheck = checkEndConditions(newState);
@@ -257,8 +275,17 @@ export function makeDecision(state: GameState, decision: Decision): GameState {
   if (endCheck.ended) {
     const analysis = analyzeSurvivalPerformance(newState);
 
+    // Generate personalized lessons based on player patterns
+    const personalizedLessons = generatePersonalizedLessons(newState);
+    const missedOpportunities = identifyMissedOpportunities(newState);
+
     // Build lessons array, filtering out empty strings and removing duplicates
-    const allLessons = [endCheck.reason || '', ...analysis.lessons]
+    const allLessons = [
+      endCheck.reason || '',
+      ...personalizedLessons,
+      ...missedOpportunities,
+      ...analysis.lessons
+    ]
       .filter(lesson => lesson && lesson.trim().length > 0) // Remove empty/whitespace
       .filter((lesson, index, self) => self.indexOf(lesson) === index); // Remove duplicates
 
@@ -267,7 +294,8 @@ export function makeDecision(state: GameState, decision: Decision): GameState {
       status: 'ended',
       outcome: endCheck.outcome,
       lessons: allLessons,
-      keyMoments: identifyKeyMoments(newState)
+      keyMoments: identifyKeyMoments(newState),
+      causalityChain: endCheck.causalityChain
     };
   }
 

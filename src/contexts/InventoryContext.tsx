@@ -33,6 +33,7 @@ interface InventoryContextType {
 
   // Reset
   resetInventory: () => void;
+  resetConsumption: () => void; // Reset consumed items but keep selection
 
   // Item checks (for game logic)
   hasItem: (itemId: string) => boolean;
@@ -179,6 +180,24 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     setItemStates({});
   }, []);
 
+  const resetConsumption = useCallback(() => {
+    // Reset consumed items and restore all item uses, but keep selected items
+    setConsumedItems([]);
+
+    // Restore all items to full uses
+    const newItemStates: Record<string, ItemState> = {};
+    selectedItems.forEach(itemId => {
+      const item = ITEM_DATABASE[itemId];
+      if (item.initialUses !== undefined) {
+        newItemStates[itemId] = {
+          id: itemId,
+          remainingUses: item.initialUses
+        };
+      }
+    });
+    setItemStates(newItemStates);
+  }, [selectedItems]);
+
   const triggerItemFeedback = useCallback((type: 'select' | 'deselect' | 'use' | 'locked') => {
     // Visual shake effect
     const body = document.body;
@@ -237,6 +256,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     isItemConsumed,
     getRemainingUses,
     resetInventory,
+    resetConsumption,
     hasItem,
     hasAnyItem,
     triggerItemFeedback

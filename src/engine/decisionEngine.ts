@@ -116,10 +116,11 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
     case 'mountains':
       decisions.push({
         id: 'shelter',
-        text: 'Improve shelter and wait for rescue',
+        text: 'Build shelter using rock windbreak',
         energyCost: 15,
         riskLevel: 1,
-        timeRequired: 2
+        timeRequired: 2,
+        environmentalHint: 'Exposed ridgelines increase wind danger - seek natural rock formations for protection'
       });
 
       if (metrics.energy > 40 && turnNumber < 8) {
@@ -128,7 +129,8 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
           text: 'Retrace your steps to find the trail',
           energyCost: 35,
           riskLevel: 5,
-          timeRequired: 3
+          timeRequired: 3,
+          environmentalHint: 'Alpine terrain is disorienting - recent footprints may still be visible'
         });
       }
 
@@ -138,7 +140,8 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
           text: 'Descend carefully toward lower elevation',
           energyCost: 40,
           riskLevel: 7,
-          timeRequired: 4
+          timeRequired: 4,
+          environmentalHint: 'Lower elevation means warmer temperatures, but steep terrain increases fall risk'
         });
       }
 
@@ -148,7 +151,8 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
           text: 'Climb to higher ground to spot landmarks',
           energyCost: 30,
           riskLevel: 4,
-          timeRequired: 2
+          timeRequired: 2,
+          environmentalHint: 'Mountain vantage points offer visibility for miles - look for roads or buildings'
         });
       }
       break;
@@ -159,7 +163,8 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
         text: 'Build shelter above tide line',
         energyCost: 15,
         riskLevel: 1,
-        timeRequired: 2
+        timeRequired: 2,
+        environmentalHint: 'Rocky coastline makes travel risky at high tide - stay well above water line'
       });
 
       if (metrics.energy > 40 && turnNumber < 8) {
@@ -168,7 +173,10 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
           text: 'Travel north along coast toward trail',
           energyCost: 35,
           riskLevel: 6,
-          timeRequired: 3
+          timeRequired: 3,
+          environmentalHint: scenario.weather === 'storm'
+            ? 'Storm surge and waves make coastal travel extremely dangerous'
+            : 'Tide pools and slippery rocks slow progress - watch for incoming tide'
         });
       }
 
@@ -178,7 +186,8 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
           text: 'Scout inland for easier route',
           energyCost: 25,
           riskLevel: 4,
-          timeRequired: 2
+          timeRequired: 2,
+          environmentalHint: 'Coastal bluffs may offer safer passage than beach-level travel'
         });
       }
 
@@ -187,17 +196,21 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
         text: 'Create visible signal for boats',
         energyCost: 20,
         riskLevel: 2,
-        timeRequired: 1
+        timeRequired: 1,
+        environmentalHint: 'Fishing boats and coastal patrols frequently scan shorelines'
       });
       break;
 
     case 'desert':
       decisions.push({
         id: 'shelter',
-        text: 'Find shade and conserve energy',
+        text: 'Find shade and create sun shelter',
         energyCost: 10,
         riskLevel: 1,
-        timeRequired: 2
+        timeRequired: 2,
+        environmentalHint: scenario.timeOfDay === 'midday' || scenario.timeOfDay === 'afternoon'
+          ? 'Midday heat can reach 45°C - conserve energy until temperatures drop'
+          : 'Desert temperatures drop rapidly at night - maintain shelter warmth'
       });
 
       if (metrics.energy > 45 && scenario.timeOfDay !== 'midday' && scenario.timeOfDay !== 'afternoon') {
@@ -206,7 +219,10 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
           text: 'Travel west toward highway',
           energyCost: 45,
           riskLevel: 8,
-          timeRequired: 4
+          timeRequired: 4,
+          environmentalHint: scenario.timeOfDay === 'night' || scenario.timeOfDay === 'dusk'
+            ? 'Cooler night temperatures make travel safer - use stars for navigation'
+            : 'Travel during dawn to avoid peak heat - sun rises east, sets west'
         });
       }
 
@@ -216,7 +232,8 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
           text: 'Backtrack toward your vehicle',
           energyCost: 40,
           riskLevel: 6,
-          timeRequired: 3
+          timeRequired: 3,
+          environmentalHint: 'Your footprints may still be visible in sand - vehicle has water and shade'
         });
       }
 
@@ -226,7 +243,8 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
           text: 'Search for water sources or shade',
           energyCost: 30,
           riskLevel: 5,
-          timeRequired: 2
+          timeRequired: 2,
+          environmentalHint: 'Desert vegetation clusters near underground water - look for green patches'
         });
       }
       break;
@@ -234,10 +252,11 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
     case 'forest':
       decisions.push({
         id: 'shelter',
-        text: 'Build shelter and wait',
+        text: 'Build debris shelter among trees',
         energyCost: 15,
         riskLevel: 1,
-        timeRequired: 2
+        timeRequired: 2,
+        environmentalHint: 'Dense canopy provides natural cover - use fallen branches and leaves for insulation'
       });
 
       if (metrics.energy > 40 && turnNumber < 8) {
@@ -246,7 +265,8 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
           text: 'Search systematically for the trail',
           energyCost: 35,
           riskLevel: 5,
-          timeRequired: 3
+          timeRequired: 3,
+          environmentalHint: 'Dense forest makes navigation difficult - mark your path to avoid walking in circles'
         });
       }
 
@@ -256,7 +276,8 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
           text: 'Follow terrain downhill to find streams',
           energyCost: 30,
           riskLevel: 4,
-          timeRequired: 3
+          timeRequired: 3,
+          environmentalHint: 'Water flows downhill toward civilization - streams often lead to trails or roads'
         });
       }
 
@@ -266,7 +287,8 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
           text: 'Call out and listen for your group',
           energyCost: 15,
           riskLevel: 1,
-          timeRequired: 1
+          timeRequired: 1,
+          environmentalHint: 'Sound carries well in forest - pause between calls to listen for responses'
         });
       }
       break;
@@ -274,10 +296,13 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
     case 'tundra':
       decisions.push({
         id: 'shelter',
-        text: 'Create wind break and wait out weather',
+        text: 'Dig snow shelter and windbreak',
         energyCost: 20,
         riskLevel: 1,
-        timeRequired: 2
+        timeRequired: 2,
+        environmentalHint: scenario.weather === 'storm' || scenario.weather === 'snow'
+          ? 'Wind chill in whiteout conditions is life-threatening - prioritize immediate shelter'
+          : `Wind chill at ${scenario.temperature}°C can cause frostbite - snow provides insulation`
       });
 
       if (metrics.energy > 50 && scenario.weather !== 'storm' && scenario.weather !== 'snow') {
@@ -286,7 +311,8 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
           text: 'Navigate south-southwest toward camp',
           energyCost: 50,
           riskLevel: 9,
-          timeRequired: 4
+          timeRequired: 4,
+          environmentalHint: 'Clear weather is rare in tundra - use sun position while visibility lasts'
         });
       }
 
@@ -296,7 +322,10 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
           text: 'Try to retrace your tracks',
           energyCost: 35,
           riskLevel: 7,
-          timeRequired: 3
+          timeRequired: 3,
+          environmentalHint: scenario.weather === 'clear'
+            ? 'Tracks remain visible in snow unless new snowfall covers them'
+            : 'Wind-blown snow quickly obscures footprints - act fast if tracks are visible'
         });
       }
       break;
@@ -304,10 +333,11 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
     case 'urban-edge':
       decisions.push({
         id: 'shelter',
-        text: 'Find safe shelter in structures',
+        text: 'Find shelter in stable structure',
         energyCost: 15,
         riskLevel: 2,
-        timeRequired: 2
+        timeRequired: 2,
+        environmentalHint: 'Avoid unstable buildings in abandoned areas - check for structural damage before entering'
       });
 
       if (metrics.energy > 40 && turnNumber < 8) {
@@ -316,7 +346,8 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
           text: 'Navigate toward populated areas',
           energyCost: 35,
           riskLevel: 5,
-          timeRequired: 3
+          timeRequired: 3,
+          environmentalHint: 'Follow power lines, paved roads, or infrastructure toward active areas'
         });
       }
 
@@ -326,7 +357,8 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
           text: 'Climb structure for vantage point',
           energyCost: 25,
           riskLevel: 6,
-          timeRequired: 2
+          timeRequired: 2,
+          environmentalHint: 'Check structure stability before climbing - look for traffic, lights, or smoke'
         });
       }
 
@@ -335,7 +367,8 @@ function getEnvironmentSpecificDecisions(state: GameState): Decision[] {
         text: 'Create visible signal or noise',
         energyCost: 15,
         riskLevel: 1,
-        timeRequired: 1
+        timeRequired: 1,
+        environmentalHint: 'Urban areas may have passing vehicles or maintenance crews - use loud noise'
       });
       break;
   }
@@ -501,24 +534,44 @@ function getFireManagementDecisions(state: GameState): Decision[] {
   const hasLighter = equipment.some(e => e.name.toLowerCase().includes('lighter'));
   const hasMatches = equipment.some(e => e.name.toLowerCase().includes('matches'));
 
-  // Gathering materials
+  // Gathering materials - environment-aware
   if (metrics.energy > 20) {
+    const tinderHints: Record<string, string> = {
+      'mountains': 'Alpine scrub and dry pine needles make good tinder at high elevation',
+      'desert': 'Dry cacti fibers and dead brush - fuel is scarce, conserve matches',
+      'forest': 'Abundant dry bark and pine needles under tree canopy',
+      'coast': 'Driftwood and dry seaweed above tide line - salt reduces burn quality',
+      'tundra': 'Dry moss and lichen critical in treeless environment - search carefully',
+      'urban-edge': 'Paper, cardboard, and dry wood from structures'
+    };
+
     decisions.push({
       id: 'gather-tinder',
       text: 'Gather tinder (dry grass, bark)',
       energyCost: 8,
       riskLevel: 1,
-      timeRequired: 1
+      timeRequired: 1,
+      environmentalHint: tinderHints[state.currentEnvironment]
     });
   }
 
   if (metrics.energy > 25) {
+    const firewoodHints: Record<string, string> = {
+      'mountains': 'Stunted alpine trees provide limited fuel - deadwood is precious',
+      'desert': 'Large fuel extremely rare - prioritize tinder and small kindling',
+      'forest': 'Abundant deadwood available - select dry, standing dead branches',
+      'coast': 'Driftwood abundant but often damp - dry thoroughly before use',
+      'tundra': 'Almost no natural fuel - any wood found is critical to survival',
+      'urban-edge': 'Wooden pallets, furniture, and structural wood plentiful'
+    };
+
     decisions.push({
       id: 'gather-firewood',
       text: 'Gather firewood (kindling and logs)',
       energyCost: 15,
       riskLevel: 2,
-      timeRequired: 2
+      timeRequired: 2,
+      environmentalHint: firewoodHints[state.currentEnvironment]
     });
   }
 
@@ -609,14 +662,24 @@ function getWaterPurificationDecisions(state: GameState): Decision[] {
   const hasCleanWater = equipment.some(e => e.name.toLowerCase().includes('water bottle (clean)') ||
     (e.name.toLowerCase().includes('water bottle') && !e.name.toLowerCase().includes('empty') && !e.name.toLowerCase().includes('untreated')));
 
-  // Collecting water
+  // Collecting water - environment-aware
   if ((hasEmptyBottle || !equipment.some(e => e.name.toLowerCase().includes('water bottle'))) && metrics.energy > 15) {
+    const waterHints: Record<string, string> = {
+      'mountains': 'Snowmelt and alpine streams available - higher elevation means purer water',
+      'desert': 'Water extremely scarce - check rock shadows, dry streambeds after dawn',
+      'forest': 'Streams flow downhill - follow terrain and listen for running water',
+      'coast': 'Do NOT drink saltwater - seek freshwater streams flowing to ocean',
+      'tundra': 'Melt clean snow for water - avoid yellow or pink snow (algae/contamination)',
+      'urban-edge': 'Check pipes, water heaters in structures - treat all water as contaminated'
+    };
+
     decisions.push({
       id: 'collect-water',
       text: 'Find and collect water',
       energyCost: 12,
       riskLevel: 2,
-      timeRequired: 2
+      timeRequired: 2,
+      environmentalHint: waterHints[state.currentEnvironment]
     });
   }
 
@@ -756,30 +819,61 @@ export function generateDecisions(state: GameState): Decision[] {
   decisions.push(...principleDecisions);
 
   if (metrics.energy > 25 && state.currentEnvironment !== 'desert') {
+    const scoutHints: Record<string, string> = {
+      'mountains': 'Look for protected areas, water sources, and potential descent routes',
+      'forest': 'Search for clearings, water, edible plants, and trail markers',
+      'coast': 'Check tide pools for resources and scan for boat traffic',
+      'tundra': 'Limited resources - look for wind-protected areas and any fuel sources',
+      'urban-edge': 'Search buildings for supplies, water, and signaling materials'
+    };
+
     decisions.push({
       id: 'scout',
       text: 'Scout immediate area for resources',
       energyCost: 25,
       riskLevel: 3,
-      timeRequired: 2
+      timeRequired: 2,
+      environmentalHint: scoutHints[state.currentEnvironment] || 'Search surroundings for useful resources and hazards'
     });
   }
+
+  const restHints: Record<string, string> = {
+    'mountains': metrics.bodyTemperature < 35 ? 'Rest in shelter - hypothermia risk at this temperature' : 'Rest conserves energy in cold, high-altitude environment',
+    'desert': scenario.timeOfDay === 'midday' || scenario.timeOfDay === 'afternoon'
+      ? 'Rest during peak heat - moving in midday sun is extremely dangerous'
+      : 'Rest to conserve energy - desert survival depends on minimizing exertion',
+    'forest': 'Rest under tree cover - forest provides natural protection from elements',
+    'coast': 'Rest above tide line - monitor weather and sea conditions while recovering',
+    'tundra': metrics.bodyTemperature < 35 ? 'Rest in wind-protected area - movement risks further heat loss' : 'Rest conserves critical energy in extreme cold',
+    'urban-edge': 'Rest in stable shelter - urban structures provide better protection than wilderness'
+  };
 
   decisions.push({
     id: 'rest',
     text: 'Rest to recover energy',
     energyCost: -25,
     riskLevel: 1,
-    timeRequired: 2
+    timeRequired: 2,
+    environmentalHint: restHints[state.currentEnvironment]
   });
 
   if (scenario.weather === 'storm' || scenario.weather === 'snow') {
+    const fortifyHints: Record<string, string> = {
+      'mountains': 'Storm winds intensify at altitude - reinforce windward side of shelter',
+      'desert': 'Sandstorms cause respiratory issues - seal shelter openings against blowing sand',
+      'forest': 'Storm brings falling branches - select shelter location away from dead trees',
+      'coast': 'Storm surge and high winds threaten coastal positions - move to higher ground',
+      'tundra': 'Blizzard conditions deadly - pack snow walls and minimize shelter openings',
+      'urban-edge': 'Seek interior rooms away from windows - storms may damage weak structures'
+    };
+
     decisions.push({
       id: 'fortify',
       text: 'Fortify shelter against weather',
       energyCost: 30,
       riskLevel: 2,
-      timeRequired: 3
+      timeRequired: 3,
+      environmentalHint: fortifyHints[state.currentEnvironment]
     });
   }
 

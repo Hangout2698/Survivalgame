@@ -5,6 +5,7 @@ import { generateBriefing, generateConciseBrief } from '../engine/briefingGenera
 import { getEnvironmentTips } from '../engine/survivalPrinciplesService';
 import { generateScenario } from '../engine/scenarioGenerator';
 import { useInventory } from '../contexts/InventoryContext';
+import { ITEM_DATABASE } from '../data/itemDatabase';
 import { getTriggeredTutorialScenario } from '../data/tutorialScenarios';
 import type { PlayerStats } from './StatusHUD';
 import { DangerVignette } from './DangerVignette';
@@ -28,7 +29,7 @@ import type { PrincipleCategory } from '../engine/survivalPrinciplesService';
 import { CloudSnow } from 'lucide-react';
 
 export function Game() {
-  const { resetInventory, resetConsumption } = useInventory();
+  const { resetInventory, resetConsumption, selectedItems } = useInventory();
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [loadoutComplete, setLoadoutComplete] = useState(false);
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -118,14 +119,24 @@ export function Game() {
   useEffect(() => {
     // Only create game after loadout is complete
     if (loadoutComplete && !gameState && !gameLoadError && scenario) {
-      createNewGame(scenario)
+      // Convert selected items from inventory context to Equipment format
+      const equipment = selectedItems.map(itemId => {
+        const item = ITEM_DATABASE[itemId];
+        return {
+          name: item.name,
+          quantity: 1,
+          condition: 'good' as const
+        };
+      });
+
+      createNewGame(scenario, equipment)
         .then(setGameState)
         .catch((error) => {
           console.error('Failed to create game:', error);
           setGameLoadError('Failed to initialize game. Please try again.');
         });
     }
-  }, [loadoutComplete, gameState, gameLoadError, scenario]);
+  }, [loadoutComplete, gameState, gameLoadError, scenario, selectedItems]);
   useEffect(() => {
     if (gameState && gameState.status === 'active') {
       // Check for tutorial scenario triggers

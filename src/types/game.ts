@@ -56,6 +56,7 @@ export interface Decision {
   // Visual elements
   illustrationPrompt?: string; // Optional micro-illustration prompt
   iconKey?: string; // Icon identifier for quick-load fallback
+  environmentalHint?: string; // Context-specific survival hint for this decision
 }
 
 // Detailed breakdown for a single stat change
@@ -154,6 +155,39 @@ export interface SurvivalGuide {
   fileName: string;
 }
 
+// Threshold crossing tracking for causality analysis
+export interface MetricThresholdCrossing {
+  turn: number;
+  metric: keyof PlayerMetrics;
+  previousValue: number;
+  newValue: number;
+  threshold: number;
+  crossingType: 'warning' | 'danger' | 'critical' | 'fatal';
+  contributingDecision: {
+    turn: number;
+    decisionText: string;
+    decisionId: string;
+  };
+}
+
+// Causality chain from root cause to death
+export interface CausalityChain {
+  rootCauseDecision: {
+    turn: number;
+    decisionText: string;
+    decisionId: string;
+    immediateEffect: string;
+  };
+  cascadeSteps: Array<{
+    turn: number;
+    description: string;
+    metricChange: string; // e.g., "Energy: 45 → 28"
+    severity: 'low' | 'medium' | 'high' | 'critical';
+  }>;
+  fatalThreshold: MetricThresholdCrossing;
+  alternativePath?: string;
+}
+
 export interface GameState {
   id: string;
   scenario: Scenario;
@@ -179,6 +213,8 @@ export interface GameState {
   poorDecisions?: Array<{ turn: number; description: string; principle: string }>;
   principleAlignmentScore?: number; // 0-100, tracks learning
   discoveredPrinciples?: Set<string>; // Unlocked principles
+  metricThresholdCrossings?: MetricThresholdCrossing[]; // Track threshold crossings
+  causalityChain?: CausalityChain; // Death causality analysis
 }
 
 export interface SurvivalRule {
