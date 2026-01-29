@@ -6,7 +6,6 @@ import { getEnvironmentTips } from '../engine/survivalPrinciplesService';
 import { generateScenario } from '../engine/scenarioGenerator';
 import { useInventory } from '../contexts/InventoryContext';
 import { getTriggeredTutorialScenario } from '../data/tutorialScenarios';
-import { SurvivalStatusDashboard } from './SurvivalStatusDashboard';
 import type { PlayerStats } from './StatusHUD';
 import { DangerVignette } from './DangerVignette';
 import { ActionHistory } from './ActionHistory';
@@ -22,11 +21,14 @@ import { ConsequenceExplanationPanel } from './ConsequenceExplanationPanel';
 import { ObjectiveDisplay } from './ObjectiveDisplay';
 import { PrincipleUnlockModal } from './PrincipleUnlockModal';
 import { ScenarioHeroImage } from './ScenarioHeroImage';
+import InformationDashboard from './InformationDashboard';
+import { CriticalStatsAlert } from './CriticalStatsAlert';
+import FailureExplanationModal from './FailureExplanationModal';
 import type { PrincipleCategory } from '../engine/survivalPrinciplesService';
 import { CloudSnow } from 'lucide-react';
 
 export function Game() {
-  const { resetInventory } = useInventory();
+  const { resetInventory, resetConsumption } = useInventory();
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [loadoutComplete, setLoadoutComplete] = useState(false);
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -49,6 +51,7 @@ export function Game() {
   const [showPulse, setShowPulse] = useState(false);
   const [touchStartY, setTouchStartY] = useState<number>(0);
   const [touchStartTime, setTouchStartTime] = useState<number>(0);
+  const [showFailureExplanation, setShowFailureExplanation] = useState(false);
 
   // Generate scenario on component mount (before loadout selection)
   useEffect(() => {
@@ -208,20 +211,33 @@ export function Game() {
     });
 
     if (newState.status === 'ended') {
-      setTimeout(() => setShowOutcome(true), 1000);
+      // If player died and we have causality chain, show failure explanation first
+      if (newState.outcome === 'died' && newState.causalityChain) {
+        setTimeout(() => setShowFailureExplanation(true), 1000);
+      } else {
+        setTimeout(() => setShowOutcome(true), 1000);
+      }
     }
   };
 
   const handleNewGame = async () => {
     setRecentOutcome('');
     setShowOutcome(false);
+    setShowFailureExplanation(false);
     setLastDecisionId('');
     setNotification(null);
     setGameState(null);
     setGameLoadError(null);
-    setLoadoutComplete(false);
+    // Don't reset loadoutComplete - keep the same equipment for next game
+    // setLoadoutComplete(false);
     setScenario(null); // Reset scenario to generate a new one
-    resetInventory();
+    // Reset consumed items and restore uses, but keep same equipment selection
+    resetConsumption();
+  };
+
+  const handleCloseFailureExplanation = () => {
+    setShowFailureExplanation(false);
+    setTimeout(() => setShowOutcome(true), 300);
   };
 
   const handleLoadoutComplete = () => {
@@ -365,6 +381,17 @@ export function Game() {
     );
   }
 
+  // Show failure explanation modal first if player died
+  if (showFailureExplanation && gameState) {
+    return (
+      <FailureExplanationModal
+        state={gameState}
+        causalityChain={gameState.causalityChain}
+        onClose={handleCloseFailureExplanation}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 relative">
       <DynamicEnvironmentBackground
@@ -379,6 +406,9 @@ export function Game() {
 
       {/* Danger Vignette - Visual warning effect */}
       <DangerVignette stats={getPlayerStats(gameState)} />
+
+      {/* Critical Stats Alert - Non-dismissible banner for critical conditions */}
+      <CriticalStatsAlert metrics={gameState.metrics} />
 
       {/* Action History Log - Fixed at bottom - Hidden on mobile */}
       <div className="hidden md:block">
@@ -437,11 +467,7 @@ export function Game() {
             <div className="p-4">
               <ObjectiveDisplay gameState={gameState} />
               <div className="mt-4">
-                <SurvivalStatusDashboard
-                  metrics={gameState.metrics}
-                  scenario={gameState.scenario}
-                  compact={true}
-                />
+                <InformationDashboard gameState={gameState} compact={true} />
               </div>
             </div>
           </div>
@@ -547,10 +573,7 @@ export function Game() {
             <div className="hidden lg:block">
               <div className="sticky top-4 space-y-4">
                 <ObjectiveDisplay gameState={gameState} />
-                <SurvivalStatusDashboard
-                  metrics={gameState.metrics}
-                  scenario={gameState.scenario}
-                />
+                <InformationDashboard gameState={gameState} />
               </div>
             </div>
           </div>

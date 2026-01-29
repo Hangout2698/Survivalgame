@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { PlayerMetrics, Equipment, Scenario, TimeOfDay, GameState } from '../types/game';
-import { Package, Clock, Lock, HelpCircle, Radio, AlertTriangle } from 'lucide-react';
+import { Package, Clock, Lock, HelpCircle, Radio, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { calculateWindEffect, getWindDescription } from '../engine/windSystem';
 import { getEnvironmentTips } from '../engine/survivalPrinciplesService';
 import { getPersonalizedTip } from '../engine/principleRecommendationEngine';
@@ -8,6 +8,9 @@ import { getNextPrinciples, getCategoryIcon } from '../engine/principleProgressS
 import { calculateRescueStatus, getRescueProbabilityDescription } from '../engine/rescueCalculator';
 import { getLowResourceWarnings } from '../engine/equipmentMapper';
 import { getEquipmentIcon } from '../data/iconMapping';
+import { MetricChangeIndicator } from './MetricChangeIndicator';
+import { StatTrendGraph } from './StatTrendGraph';
+import { isCritical } from '../utils/statusThresholds';
 
 interface MetricsDisplayProps {
   metrics: PlayerMetrics;
@@ -24,6 +27,12 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
   const [currentTip, setCurrentTip] = useState<string>('');
   const [personalizedTip, setPersonalizedTip] = useState<string | null>(null);
 
+  // Flash animation state for metric changes
+  const prevMetricsRef = useRef<PlayerMetrics>(metrics);
+  const [flashingMetrics, setFlashingMetrics] = useState<Record<string, 'positive' | 'negative'>>({});
+  const [metricChanges, setMetricChanges] = useState<Record<string, number>>({});
+  const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
+
   useEffect(() => {
     if (scenario) {
       const tips = getEnvironmentTips(scenario.environment);
@@ -38,6 +47,54 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
       setPersonalizedTip(getPersonalizedTip(gameState));
     }
   }, [turnNumber, gameState]);
+
+  // Detect metric changes and trigger flash animations
+  useEffect(() => {
+    const changes: Record<string, 'positive' | 'negative'> = {};
+    const changeAmounts: Record<string, number> = {};
+
+    // List of metrics to track
+    const metricsToTrack: Array<{ key: keyof PlayerMetrics; isInverse?: boolean }> = [
+      { key: 'energy' },
+      { key: 'hydration' },
+      { key: 'bodyTemperature' },
+      { key: 'morale' },
+      { key: 'shelter' },
+      { key: 'injurySeverity', isInverse: true },
+      { key: 'cumulativeRisk', isInverse: true },
+      { key: 'signalEffectiveness' },
+      { key: 'survivalProbability' }
+    ];
+
+    metricsToTrack.forEach(({ key, isInverse = false }) => {
+      const prev = prevMetricsRef.current[key];
+      const curr = metrics[key];
+
+      if (typeof prev === 'number' && typeof curr === 'number' && Math.abs(curr - prev) > 0.01) {
+        const change = curr - prev;
+        changeAmounts[key] = change;
+
+        // For inverse metrics (injury, risk), lower is better
+        const isPositive = isInverse ? change < 0 : change > 0;
+        changes[key] = isPositive ? 'positive' : 'negative';
+      }
+    });
+
+    if (Object.keys(changes).length > 0) {
+      setFlashingMetrics(changes);
+      setMetricChanges(changeAmounts);
+
+      // Clear flash after 2 seconds
+      const timer = setTimeout(() => {
+        setFlashingMetrics({});
+        setMetricChanges({});
+      }, 2000);
+
+      return () => clearTimeout(timer);
+    }
+
+    prevMetricsRef.current = metrics;
+  }, [metrics]);
 
   // Calculate day number from hours
   const dayNumber = hoursElapsed !== undefined ? Math.floor(hoursElapsed / 24) + 1 : 1;
@@ -108,34 +165,100 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
         value={metrics.energy}
         max={100}
         color={getEnergyColor(metrics.energy)}
+        flashState={flashingMetrics.energy}
+        changeAmount={metricChanges.energy}
+        metricKey="energy"
+        showHistory={true}
+        onToggleHistory={() => setExpandedMetric(expandedMetric === 'energy' ? null : 'energy')}
+        historyExpanded={expandedMetric === 'energy'}
+        gameState={gameState}
+        initialValue={100}
+        metricRange={{ min: 0, max: 100 }}
       />
       <MetricBar
         label="Hydration"
         value={metrics.hydration}
         max={100}
         color={getHydrationColor(metrics.hydration)}
+        flashState={flashingMetrics.hydration}
+        changeAmount={metricChanges.hydration}
+        metricKey="hydration"
+        showHistory={true}
+        onToggleHistory={() => setExpandedMetric(expandedMetric === 'hydration' ? null : 'hydration')}
+        historyExpanded={expandedMetric === 'hydration'}
+        gameState={gameState}
+        initialValue={100}
+        metricRange={{ min: 0, max: 100 }}
       />
-      <div>
-        <div className="text-base text-gray-400 mb-1">Body Temperature</div>
+      <div className={`relative rounded p-2 -mx-2 transition-colors ${flashingMetrics.bodyTemperature ? `flash-${flashingMetrics.bodyTemperature}` : ''}`}>
+        <div className="flex justify-between text-base text-gray-400 mb-1">
+          <div className="flex items-center gap-2">
+            <span>Body Temperature</span>
+            {isCritical('bodyTemperature', metrics.bodyTemperature) && (
+              <AlertTriangle className="w-4 h-4 text-red-400 animate-pulse" />
+            )}
+          </div>
+          <span className={`font-mono ${flashingMetrics.bodyTemperature ? 'pulse-value' : ''}`}>
+            {metrics.bodyTemperature.toFixed(1)}°C
+          </span>
+        </div>
         <div className="relative">
           <div className="h-4 bg-gray-800 rounded-full overflow-hidden relative">
             <div
-              className={`h-full transition-all duration-500 ${getBodyTempBarColor(metrics.bodyTemperature)}`}
+              className={`h-full transition-all duration-500 ${getBodyTempBarColor(metrics.bodyTemperature)} ${isCritical('bodyTemperature', metrics.bodyTemperature) ? 'animate-pulse' : ''}`}
               style={{ width: `${getBodyTempPercentage(metrics.bodyTemperature)}%` }}
             />
           </div>
           <div className="absolute top-0 left-1/2 w-0.5 h-4 bg-white opacity-50" style={{ transform: 'translateX(-50%)' }} />
           <div className="flex justify-between text-xs text-gray-500 mt-1">
             <span>32°C Hypothermic</span>
-            <span className="text-white font-medium">{metrics.bodyTemperature.toFixed(1)}°C</span>
+            <span>37°C Normal</span>
             <span>42°C Heat Exhaustion</span>
           </div>
         </div>
+        {metricChanges.bodyTemperature !== undefined && Math.abs(metricChanges.bodyTemperature) > 0.01 && (
+          <MetricChangeIndicator change={metricChanges.bodyTemperature} />
+        )}
+        {gameState && (
+          <button
+            onClick={() => setExpandedMetric(expandedMetric === 'bodyTemperature' ? null : 'bodyTemperature')}
+            className="text-xs text-blue-400 hover:text-blue-300 mt-1 flex items-center gap-1"
+            aria-expanded={expandedMetric === 'bodyTemperature'}
+          >
+            {expandedMetric === 'bodyTemperature' ? (
+              <>
+                <ChevronDown className="w-3 h-3" />
+                Hide History
+              </>
+            ) : (
+              <>
+                <ChevronRight className="w-3 h-3" />
+                View History
+              </>
+            )}
+          </button>
+        )}
+        {expandedMetric === 'bodyTemperature' && gameState && (
+          <div className="mt-2 animate-slideDown">
+            <StatTrendGraph
+              history={gameState.history}
+              metricKey="bodyTemperature"
+              metricLabel="Body Temperature"
+              initialValue={37}
+              metricRange={{ min: 32, max: 42 }}
+            />
+          </div>
+        )}
       </div>
 
-      <div className="pt-3 border-t border-gray-700">
+      <div className={`pt-3 border-t border-gray-700 relative rounded p-2 -mx-2 transition-colors ${flashingMetrics.morale ? `flash-${flashingMetrics.morale}` : ''}`}>
         <div className="flex items-center gap-2 mb-1">
-          <div className="text-base text-gray-400">Morale</div>
+          <div className="text-base text-gray-400 flex items-center gap-2">
+            Morale
+            {isCritical('morale', metrics.morale) && (
+              <AlertTriangle className="w-4 h-4 text-red-400 animate-pulse" />
+            )}
+          </div>
           <div className="group relative">
             <HelpCircle className="w-4 h-4 text-gray-500 hover:text-gray-300 cursor-help" />
             <div className="absolute left-0 bottom-full mb-2 w-64 bg-gray-900 border border-gray-700 rounded p-3 text-xs text-gray-300 hidden group-hover:block z-50 shadow-lg">
@@ -153,16 +276,49 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className={`text-2xl font-mono ${getMoraleColor(metrics.morale)}`}>
+          <div className={`text-2xl font-mono ${getMoraleColor(metrics.morale)} ${flashingMetrics.morale ? 'pulse-value' : ''}`}>
             {getMoraleLabel(metrics.morale)}
           </div>
           <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
             <div
-              className={`h-full transition-all duration-500 ${getMoraleBarColor(metrics.morale)}`}
+              className={`h-full transition-all duration-500 ${getMoraleBarColor(metrics.morale)} ${isCritical('morale', metrics.morale) ? 'animate-pulse' : ''}`}
               style={{ width: `${metrics.morale}%` }}
             />
           </div>
         </div>
+        {metricChanges.morale !== undefined && Math.abs(metricChanges.morale) > 0.01 && (
+          <MetricChangeIndicator change={metricChanges.morale} />
+        )}
+        {gameState && (
+          <button
+            onClick={() => setExpandedMetric(expandedMetric === 'morale' ? null : 'morale')}
+            className="text-xs text-blue-400 hover:text-blue-300 mt-1 flex items-center gap-1"
+            aria-expanded={expandedMetric === 'morale'}
+          >
+            {expandedMetric === 'morale' ? (
+              <>
+                <ChevronDown className="w-3 h-3" />
+                Hide History
+              </>
+            ) : (
+              <>
+                <ChevronRight className="w-3 h-3" />
+                View History
+              </>
+            )}
+          </button>
+        )}
+        {expandedMetric === 'morale' && gameState && (
+          <div className="mt-2 animate-slideDown">
+            <StatTrendGraph
+              history={gameState.history}
+              metricKey="morale"
+              metricLabel="Morale"
+              initialValue={100}
+              metricRange={{ min: 0, max: 100 }}
+            />
+          </div>
+        )}
       </div>
       {scenario && (
         <div className="pt-2 border-t border-gray-700">
@@ -433,23 +589,107 @@ interface MetricBarProps {
   value: number;
   max: number;
   color: string;
+  flashState?: 'positive' | 'negative';
+  changeAmount?: number;
+  metricKey?: keyof PlayerMetrics;
+  isInverse?: boolean;
+  showHistory?: boolean;
+  onToggleHistory?: () => void;
+  historyExpanded?: boolean;
+  gameState?: GameState;
+  initialValue?: number;
+  metricRange?: { min: number; max: number };
 }
 
-function MetricBar({ label, value, max, color }: MetricBarProps) {
+function MetricBar({
+  label,
+  value,
+  max,
+  color,
+  flashState,
+  changeAmount,
+  metricKey,
+  isInverse = false,
+  showHistory = false,
+  onToggleHistory,
+  historyExpanded = false,
+  gameState,
+  initialValue = 100,
+  metricRange = { min: 0, max: 100 }
+}: MetricBarProps) {
   const percentage = (value / max) * 100;
+  const isCriticalStat = metricKey && isCritical(metricKey, value);
 
   return (
     <div>
-      <div className="flex justify-between text-base text-gray-400 mb-1">
-        <span>{label}</span>
-        <span className="font-mono">{Math.round(value)}</span>
+      {/* Container with flash animation */}
+      <div className={`relative rounded p-2 -mx-2 transition-colors ${flashState ? `flash-${flashState}` : ''}`}>
+        <div className="flex justify-between text-base text-gray-400 mb-1">
+          <div className="flex items-center gap-2">
+            <span>{label}</span>
+            {isCriticalStat && (
+              <AlertTriangle className="w-4 h-4 text-red-400 animate-pulse" />
+            )}
+          </div>
+          <span className={`font-mono ${flashState ? 'pulse-value' : ''}`}>
+            {Math.round(value)}
+          </span>
+        </div>
+
+        {/* Metric bar with threshold markers */}
+        <div className="relative h-3 bg-gray-800 rounded-full overflow-visible mb-1">
+          {/* Threshold markers */}
+          <div className="absolute top-0 left-1/4 w-px h-4 bg-red-500/30" title="Critical (25%)" />
+          <div className="absolute top-0 left-1/2 w-px h-4 bg-yellow-500/30" title="Warning (50%)" />
+          <div className="absolute top-0 left-3/4 w-px h-4 bg-green-500/30" title="Good (75%)" />
+
+          {/* Progress bar */}
+          <div
+            className={`h-full transition-all duration-500 ${color} ${isCriticalStat ? 'animate-pulse' : ''}`}
+            style={{ width: `${Math.max(0, Math.min(100, percentage))}%` }}
+          />
+        </div>
+
+        {/* Change indicator */}
+        {changeAmount !== undefined && Math.abs(changeAmount) > 0.01 && (
+          <MetricChangeIndicator change={changeAmount} isInverse={isInverse} />
+        )}
+
+        {/* View History button */}
+        {showHistory && gameState && metricKey && (
+          <button
+            onClick={onToggleHistory}
+            className="text-xs text-blue-400 hover:text-blue-300 mt-1 flex items-center gap-1"
+            aria-expanded={historyExpanded}
+          >
+            {historyExpanded ? (
+              <>
+                <ChevronDown className="w-3 h-3" />
+                Hide History
+              </>
+            ) : (
+              <>
+                <ChevronRight className="w-3 h-3" />
+                View History
+              </>
+            )}
+          </button>
+        )}
       </div>
-      <div className="h-3 bg-gray-800 rounded-full overflow-hidden">
-        <div
-          className={`h-full transition-all duration-500 ${color}`}
-          style={{ width: `${Math.max(0, Math.min(100, percentage))}%` }}
-        />
-      </div>
+
+      {/* Trend graph (expanded) */}
+      {historyExpanded && showHistory && gameState && metricKey && (
+        <div className="mt-2 animate-slideDown">
+          <StatTrendGraph
+            history={gameState.history}
+            metricKey={metricKey}
+            metricLabel={label}
+            initialValue={initialValue}
+            metricRange={metricRange}
+            isInverse={isInverse}
+          />
+        </div>
+      )}
     </div>
   );
 }
