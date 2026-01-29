@@ -5,8 +5,8 @@ import { generateBriefing, generateConciseBrief } from '../engine/briefingGenera
 import { getEnvironmentTips } from '../engine/survivalPrinciplesService';
 import { useInventory } from '../contexts/InventoryContext';
 import { getTriggeredTutorialScenario } from '../data/tutorialScenarios';
-import { MetricsDisplay } from './MetricsDisplay';
-import { StatusHUD, type PlayerStats } from './StatusHUD';
+import { SurvivalStatusDashboard } from './SurvivalStatusDashboard';
+import type { PlayerStats } from './StatusHUD';
 import { DangerVignette } from './DangerVignette';
 import { ActionHistory } from './ActionHistory';
 import { LoadoutScreen } from './LoadoutScreen';
@@ -17,6 +17,11 @@ import { GameOutcome } from './GameOutcome';
 import { EnvironmentBackground } from './EnvironmentBackground';
 import { DecisionIllustration } from './DecisionIllustration';
 import { Notification } from './Notification';
+import { ConsequenceExplanationPanel } from './ConsequenceExplanationPanel';
+import { ObjectiveDisplay } from './ObjectiveDisplay';
+import { PrincipleUnlockModal } from './PrincipleUnlockModal';
+import { ScenarioHeroImage } from './ScenarioHeroImage';
+import type { PrincipleCategory } from '../engine/survivalPrinciplesService';
 import { CloudSnow } from 'lucide-react';
 
 export function Game() {
@@ -33,6 +38,11 @@ export function Game() {
     message: string;
     type: 'success' | 'warning' | 'info' | 'danger';
   } | null>(null);
+  const [principleUnlock, setPrincipleUnlock] = useState<{
+    principle: string;
+    category: PrincipleCategory;
+  } | null>(null);
+  const [showMobileStatus, setShowMobileStatus] = useState(false);
 
   // Convert game metrics to simplified PlayerStats for HUD
   const getPlayerStats = (state: GameState | null): PlayerStats => {
@@ -51,20 +61,6 @@ export function Game() {
       energy: Math.round(state.metrics.energy),
       morale: Math.round(state.metrics.morale)
     };
-  };
-
-  const handleGameOverFromHUD = (reason: string) => {
-    if (!gameState) return;
-
-    // Force game end with the specific reason (stored in lessons[0])
-    const updatedState: GameState = {
-      ...gameState,
-      status: 'ended',
-      outcome: 'died',
-      lessons: [reason, ...(gameState.lessons || [])]
-    };
-    setGameState(updatedState);
-    setTimeout(() => setShowOutcome(true), 1000);
   };
 
   useEffect(() => {
@@ -94,12 +90,54 @@ export function Game() {
     setLastDecisionId('');
     setNotification(null);
 
+    const previousPrincipleCount = gameState.discoveredPrinciples?.size || 0;
     const newState = makeDecision(gameState, decision);
     const lastOutcome = newState.history[newState.history.length - 1];
 
     setLastDecisionId(decision.id);
     setRecentOutcome(lastOutcome.immediateEffect);
     setGameState(newState);
+
+    // Check for newly discovered principles
+    const newPrincipleCount = newState.discoveredPrinciples?.size || 0;
+    if (newPrincipleCount > previousPrincipleCount && lastOutcome.survivalPrincipleAlignment) {
+      // Find the newly discovered principle
+      const newPrinciples = Array.from(newState.discoveredPrinciples || []).filter(
+        p => !gameState.discoveredPrinciples?.has(p)
+      );
+
+      if (newPrinciples.length > 0) {
+        // Determine category based on decision type
+        const categoryMap: Record<string, PrincipleCategory> = {
+          'shelter': 'shelter',
+          'improve': 'shelter',
+          'fire': 'fire',
+          'water': 'water',
+          'signal': 'signaling',
+          'navigate': 'navigation',
+          'treat': 'firstAid',
+          'rest': 'psychology',
+          'scout': 'priorities',
+          'forage': 'food'
+        };
+
+        let category: PrincipleCategory = 'priorities';
+        for (const [key, cat] of Object.entries(categoryMap)) {
+          if (decision.id.includes(key)) {
+            category = cat;
+            break;
+          }
+        }
+
+        // Show principle unlock modal after a short delay
+        setTimeout(() => {
+          setPrincipleUnlock({
+            principle: newPrinciples[0],
+            category
+          });
+        }, 1500);
+      }
+    }
 
     const notificationType =
       lastOutcome.decisionQuality === 'excellent' ? 'success' :
@@ -141,7 +179,9 @@ export function Game() {
     const updatedMetrics = { ...gameState.metrics };
     Object.entries(choice.outcome.metricsChange).forEach(([key, value]) => {
       if (key in updatedMetrics && typeof value === 'number') {
-        (updatedMetrics as any)[key] = Math.max(0, Math.min(100, (updatedMetrics as any)[key] + value));
+        const metricKey = key as keyof PlayerMetrics;
+        const currentValue = updatedMetrics[metricKey] as number;
+        (updatedMetrics[metricKey] as number) = Math.max(0, Math.min(100, currentValue + value));
       }
     });
 
@@ -230,17 +270,69 @@ export function Game() {
       {/* Danger Vignette - Visual warning effect */}
       <DangerVignette stats={getPlayerStats(gameState)} />
 
-      {/* Status HUD - Fixed at top */}
-      <StatusHUD
-        stats={getPlayerStats(gameState)}
-        onGameOver={handleGameOverFromHUD}
-      />
-
-      {/* Action History Log - Fixed at bottom */}
-      <ActionHistory history={gameState.history} maxVisible={5} />
+      {/* Action History Log - Fixed at bottom - Hidden on mobile */}
+      <div className="hidden md:block">
+        <ActionHistory history={gameState.history} maxVisible={5} />
+      </div>
 
       {/* Inventory Tray - Shows equipped items */}
       <InventoryTray />
+
+      {/* Mobile Status Button */}
+      <button
+        onClick={() => setShowMobileStatus(true)}
+        className="lg:hidden fixed top-4 right-4 z-40 bg-gray-900/95 backdrop-blur-md border-2 border-gray-700 rounded-xl shadow-2xl p-3 active:scale-95 transition-transform"
+        aria-label="View status"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-lg">⚕️</span>
+          <div className="text-left">
+            <div className="text-[10px] text-gray-400 uppercase tracking-wider">Status</div>
+            <div className="flex gap-1 text-xs">
+              <span className="text-blue-400">💧{Math.round(gameState.metrics.hydration)}</span>
+              <span className="text-green-400">⚡{Math.round(gameState.metrics.energy)}</span>
+            </div>
+          </div>
+        </div>
+      </button>
+
+      {/* Mobile Status Drawer */}
+      {showMobileStatus && (
+        <div className="lg:hidden fixed inset-0 z-50 flex items-end">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fadeIn"
+            onClick={() => setShowMobileStatus(false)}
+          />
+
+          {/* Drawer */}
+          <div className="relative w-full max-h-[85vh] bg-gray-950 border-t-2 border-gray-700 rounded-t-2xl overflow-y-auto animate-slideUp">
+            <div className="sticky top-0 bg-gray-900 border-b border-gray-700 px-4 py-3 flex items-center justify-between z-10">
+              <h2 className="text-lg font-bold text-gray-100 flex items-center gap-2">
+                <span>⚕️</span>
+                Survival Status
+              </h2>
+              <button
+                onClick={() => setShowMobileStatus(false)}
+                className="p-2 hover:bg-gray-700/50 rounded-lg transition-colors"
+                aria-label="Close status"
+              >
+                <CloudSnow className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-4">
+              <ObjectiveDisplay gameState={gameState} />
+              <div className="mt-4">
+                <SurvivalStatusDashboard
+                  metrics={gameState.metrics}
+                  scenario={gameState.scenario}
+                  compact={true}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tutorial Scenario Modal */}
       {currentTutorialScenario && (
@@ -248,6 +340,15 @@ export function Game() {
           scenario={currentTutorialScenario}
           onChoice={handleTutorialChoice}
           onDismiss={handleDismissTutorial}
+        />
+      )}
+
+      {/* Principle Unlock Modal */}
+      {principleUnlock && (
+        <PrincipleUnlockModal
+          principle={principleUnlock.principle}
+          category={principleUnlock.category}
+          onClose={() => setPrincipleUnlock(null)}
         />
       )}
 
@@ -259,53 +360,64 @@ export function Game() {
         />
       )}
 
-      {/* Add padding-top to account for fixed HUD */}
-      <div className="max-w-6xl mx-auto p-4 py-8 pt-24 relative z-10">
-        <div className="mb-8 text-center">
+      {/* Main content area */}
+      <div className="max-w-6xl mx-auto px-3 md:px-4 py-4 md:py-8 relative z-10 pb-32 md:pb-8">
+        <div className="mb-4 md:mb-8 text-center">
           <div className="flex items-center justify-center gap-2 mb-2">
-            <CloudSnow className="w-8 h-8 text-gray-400" />
-            <h1 className="text-3xl font-light text-gray-100">Survival</h1>
+            <CloudSnow className="w-6 h-6 md:w-8 md:h-8 text-gray-400" />
+            <h1 className="text-2xl md:text-3xl font-light text-gray-100">Survival</h1>
           </div>
-          <p className="text-gray-500">Think. Endure. Decide.</p>
+          <p className="text-sm md:text-base text-gray-500">Think. Endure. Decide.</p>
         </div>
 
-        <div className="space-y-6">
-          <div className="grid lg:grid-cols-4 gap-6">
+        {/* Scenario Hero Image - Only on first turn */}
+        {gameState.turnNumber === 1 && (
+          <div className="mb-6 rounded-lg overflow-hidden border border-gray-800 shadow-2xl">
+            <ScenarioHeroImage
+              scenario={gameState.scenario}
+              className="h-48 md:h-64"
+              showOverlay={true}
+            />
+          </div>
+        )}
+
+        <div className="space-y-4 md:space-y-6">
+          <div className="grid lg:grid-cols-4 gap-4 md:gap-6">
             <div className="lg:col-span-3">
               {gameState.turnNumber === 1 ? (
                 <>
-                  <div className="p-8 bg-gray-900 rounded-lg border border-gray-800">
+                  <div className="p-4 md:p-8 bg-gray-900 rounded-lg border border-gray-800">
                     <div className="prose prose-invert max-w-none">
-                      <div className="text-gray-300 leading-relaxed whitespace-pre-line text-xl columns-2 gap-8">
+                      <div className="text-gray-300 leading-relaxed whitespace-pre-line text-sm md:text-xl md:columns-2 gap-8">
                         {generateBriefing(gameState.scenario)}
                       </div>
                     </div>
                   </div>
-                  <div className="mt-6 p-4 bg-gradient-to-br from-blue-900/20 to-blue-800/10 border border-blue-700/40 rounded-lg">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-2xl">🎯</span>
-                      <h4 className="text-base font-semibold text-blue-300">Survival Priorities</h4>
+                  <div className="mt-4 md:mt-6 p-3 md:p-4 bg-gradient-to-br from-blue-900/20 to-blue-800/10 border border-blue-700/40 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2 md:mb-3">
+                      <span className="text-xl md:text-2xl">🎯</span>
+                      <h4 className="text-sm md:text-base font-semibold text-blue-300">Survival Priorities</h4>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1.5 md:space-y-2">
                       {getEnvironmentTips(gameState.scenario.environment).slice(0, 3).map((tip, i) => (
-                        <div key={i} className="flex items-start gap-3">
-                          <span className="text-blue-400 text-sm font-mono mt-0.5 flex-shrink-0">
+                        <div key={i} className="flex items-start gap-2 md:gap-3">
+                          <span className="text-blue-400 text-xs md:text-sm font-mono mt-0.5 flex-shrink-0">
                             {i + 1}.
                           </span>
-                          <span className="text-sm text-gray-300 leading-relaxed">{tip}</span>
+                          <span className="text-xs md:text-sm text-gray-300 leading-relaxed">{tip}</span>
                         </div>
                       ))}
                     </div>
-                    <div className="mt-3 pt-3 border-t border-blue-800/30">
-                      <p className="text-xs text-gray-400 italic">
+                    <div className="mt-2 md:mt-3 pt-2 md:pt-3 border-t border-blue-800/30">
+                      <p className="text-[10px] md:text-xs text-gray-400 italic">
                         These principles are based on the SAS Survival Handbook
                       </p>
                     </div>
                   </div>
                 </>
               ) : (
-                <div className="p-8 bg-gray-900 rounded-lg border border-gray-800">
-                  <div className="text-gray-300 leading-relaxed whitespace-pre-line text-base">
+                <div className="p-4 md:p-8 bg-gray-900 rounded-lg border border-gray-800">
+                  <div className="text-gray-300 leading-relaxed whitespace-pre-line text-sm md:text-base">
                     {generateConciseBrief(
                       gameState.scenario,
                       gameState.metrics,
@@ -317,26 +429,22 @@ export function Game() {
               )}
             </div>
 
-            <div>
-              <div className="p-6 bg-gray-900 rounded-lg border border-gray-800 sticky top-4">
-                <h3 className="text-2xl text-gray-400 mb-4">Condition</h3>
-                <MetricsDisplay
+            {/* Desktop sidebar */}
+            <div className="hidden lg:block">
+              <div className="sticky top-4 space-y-4">
+                <ObjectiveDisplay gameState={gameState} />
+                <SurvivalStatusDashboard
                   metrics={gameState.metrics}
-                  equipment={gameState.equipment}
                   scenario={gameState.scenario}
-                  currentTimeOfDay={gameState.currentTimeOfDay}
-                  hoursElapsed={gameState.hoursElapsed}
-                  turnNumber={gameState.turnNumber}
-                  gameState={gameState}
                 />
               </div>
             </div>
           </div>
 
-          {recentOutcome && (
-            <div className="p-6 bg-blue-900/20 border border-blue-800 rounded-lg relative overflow-hidden">
+          {recentOutcome && gameState.history.length > 0 && (
+            <div className="relative">
               {lastDecisionId && (
-                <div className="absolute inset-0 pointer-events-none">
+                <div className="absolute inset-0 pointer-events-none opacity-10 hidden md:block">
                   <DecisionIllustration
                     decisionId={lastDecisionId}
                     environment={gameState.currentEnvironment}
@@ -344,16 +452,23 @@ export function Game() {
                 </div>
               )}
               <div className="relative z-10">
-                <p className="text-gray-300 leading-relaxed text-lg">{recentOutcome}</p>
-                {gameState.history.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-blue-800 space-y-1">
-                    {gameState.history[gameState.history.length - 1].consequences.map(
-                      (consequence, index) => (
-                        <p key={index} className="text-base text-gray-400">
-                          {consequence}
-                        </p>
-                      )
-                    )}
+                {gameState.history[gameState.history.length - 1].explanation ? (
+                  <ConsequenceExplanationPanel
+                    explanation={gameState.history[gameState.history.length - 1].explanation!}
+                    metricsChange={gameState.history[gameState.history.length - 1].metricsChange}
+                  />
+                ) : (
+                  <div className="p-4 md:p-6 bg-blue-900/20 border border-blue-800 rounded-lg">
+                    <p className="text-gray-300 leading-relaxed text-sm md:text-lg">{recentOutcome}</p>
+                    <div className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-blue-800 space-y-1">
+                      {gameState.history[gameState.history.length - 1].consequences.map(
+                        (consequence, index) => (
+                          <p key={index} className="text-xs md:text-base text-gray-400">
+                            {consequence}
+                          </p>
+                        )
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -361,14 +476,15 @@ export function Game() {
           )}
 
           <div>
-            <div className="mb-4">
-              <h2 className="text-2xl text-gray-400">What do you do?</h2>
-              <div className="text-base text-gray-600 mt-1">Turn {gameState.turnNumber}</div>
+            <div className="mb-3 md:mb-4">
+              <h2 className="text-xl md:text-2xl text-gray-400">What do you do?</h2>
+              <div className="text-sm md:text-base text-gray-600 mt-1">Turn {gameState.turnNumber}</div>
             </div>
             <DecisionList
               decisions={decisions}
               onSelect={handleDecision}
               disabled={gameState.status !== 'active'}
+              gameState={gameState}
             />
           </div>
         </div>

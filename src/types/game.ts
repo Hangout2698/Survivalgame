@@ -26,6 +26,11 @@ export interface Scenario {
   terrainDifficulty: number;
   backstoryType?: string;
   wetness?: 'soaked' | 'damp' | 'dry';
+
+  // Visual elements
+  imagePrompt?: string; // AI generation prompt for hero image
+  imageUrl?: string; // Cached/generated image URL
+  imageFallback?: string; // Fallback image/icon if generation fails
 }
 
 export interface PlayerMetrics {
@@ -47,6 +52,10 @@ export interface Decision {
   energyCost: number;
   riskLevel: number;
   timeRequired: number;
+
+  // Visual elements
+  illustrationPrompt?: string; // Optional micro-illustration prompt
+  iconKey?: string; // Icon identifier for quick-load fallback
 }
 
 // Detailed breakdown for a single stat change

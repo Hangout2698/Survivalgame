@@ -1,4 +1,5 @@
 import type { Scenario, Environment, Weather, TimeOfDay, Equipment } from '../types/game';
+import { enrichScenarioWithImageData } from '../services/imageService';
 
 const environments: Environment[] = ['mountains', 'desert', 'forest', 'coast', 'tundra', 'urban-edge'];
 
@@ -146,7 +147,7 @@ export function generateScenario(): Scenario {
   const distanceToSafety = getDistanceDescription();
   const terrainDifficulty = randomInt(3, 8);
 
-  return {
+  const baseScenario: Scenario = {
     environment,
     weather,
     timeOfDay,
@@ -159,6 +160,9 @@ export function generateScenario(): Scenario {
     backstoryType: environment,
     wetness: random(['soaked', 'damp', 'dry'] as const)
   };
+
+  // Enrich with image data
+  return enrichScenarioWithImageData(baseScenario);
 }
 
 export function getScenarioDescription(scenario: Scenario): string {

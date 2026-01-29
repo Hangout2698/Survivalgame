@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react';
 import type { PlayerMetrics, Equipment, Scenario, TimeOfDay, GameState } from '../types/game';
-import { Package, Clock } from 'lucide-react';
+import { Package, Clock, Lock, HelpCircle, Radio, AlertTriangle } from 'lucide-react';
 import { calculateWindEffect, getWindDescription } from '../engine/windSystem';
 import { getEnvironmentTips } from '../engine/survivalPrinciplesService';
 import { getPersonalizedTip } from '../engine/principleRecommendationEngine';
+import { getNextPrinciples, getCategoryIcon } from '../engine/principleProgressService';
+import { calculateRescueStatus, getRescueProbabilityDescription } from '../engine/rescueCalculator';
+import { getLowResourceWarnings } from '../engine/equipmentMapper';
+import { getEquipmentIcon } from '../data/iconMapping';
 
 interface MetricsDisplayProps {
   metrics: PlayerMetrics;
@@ -35,8 +39,34 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
     }
   }, [turnNumber, gameState]);
 
+  // Calculate day number from hours
+  const dayNumber = hoursElapsed !== undefined ? Math.floor(hoursElapsed / 24) + 1 : 1;
+  const hoursIntoDay = hoursElapsed !== undefined ? hoursElapsed % 24 : 0;
+
   return (
     <div className="space-y-3">
+      {/* Prominent Turn Counter */}
+      <div className="pb-3 border-b-2 border-blue-700/50">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">🎯</span>
+            <div className="text-lg font-bold text-blue-300">Turn {turnNumber}</div>
+          </div>
+          {hoursElapsed !== undefined && (
+            <div className="text-right">
+              <div className="text-sm text-gray-400">Day {dayNumber}</div>
+              <div className="text-xs text-gray-500">{hoursElapsed}h total</div>
+            </div>
+          )}
+        </div>
+        {hoursElapsed !== undefined && (
+          <div className="text-xs text-gray-400 flex items-center gap-2">
+            <Clock className="w-3 h-3" />
+            <span>Hour {hoursIntoDay} of Day {dayNumber}</span>
+          </div>
+        )}
+      </div>
+
       {currentTimeOfDay && (
         <div className="pb-3 border-b border-gray-700">
           <div className="flex items-center gap-2 mb-2">
@@ -104,9 +134,34 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
       </div>
 
       <div className="pt-3 border-t border-gray-700">
-        <div className="text-base text-gray-400 mb-1">Morale</div>
-        <div className={`text-2xl font-mono ${getMoraleColor(metrics.morale)}`}>
-          {getMoraleLabel(metrics.morale)}
+        <div className="flex items-center gap-2 mb-1">
+          <div className="text-base text-gray-400">Morale</div>
+          <div className="group relative">
+            <HelpCircle className="w-4 h-4 text-gray-500 hover:text-gray-300 cursor-help" />
+            <div className="absolute left-0 bottom-full mb-2 w-64 bg-gray-900 border border-gray-700 rounded p-3 text-xs text-gray-300 hidden group-hover:block z-50 shadow-lg">
+              <div className="font-semibold text-blue-400 mb-1">Morale affects:</div>
+              <ul className="space-y-1 list-disc list-inside">
+                <li>Decision success rates (±10%)</li>
+                <li>Signal effectiveness</li>
+                <li>Survival probability</li>
+                <li>Unlocks special decisions</li>
+              </ul>
+              <div className="mt-2 text-gray-400 italic">
+                Current impact: {getMoraleImpactDescription(metrics.morale)}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className={`text-2xl font-mono ${getMoraleColor(metrics.morale)}`}>
+            {getMoraleLabel(metrics.morale)}
+          </div>
+          <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
+            <div
+              className={`h-full transition-all duration-500 ${getMoraleBarColor(metrics.morale)}`}
+              style={{ width: `${metrics.morale}%` }}
+            />
+          </div>
         </div>
       </div>
       {scenario && (
@@ -182,20 +237,68 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
             <div className="text-base font-medium text-gray-300">Equipment</div>
           </div>
           <div className="space-y-1.5">
-            {equipment.map((item, index) => (
-              <div key={index} className="flex items-center justify-between text-sm">
-                <span className="text-gray-400">{item.name}</span>
-                <div className="flex items-center gap-2">
-                  {item.quantity > 1 && (
-                    <span className="text-gray-500">×{item.quantity}</span>
-                  )}
-                  <span className={`${getConditionColor(item.condition)} font-mono text-sm`}>
-                    {item.condition}
-                  </span>
+            {equipment.map((item, index) => {
+              const ItemIcon = getEquipmentIcon(item.name);
+              return (
+                <div key={index} className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <ItemIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                    <span className="text-gray-400">{item.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {item.quantity > 1 && (
+                      <span className="text-gray-500">×{item.quantity}</span>
+                    )}
+                    <span className={`${getConditionColor(item.condition)} font-mono text-sm`}>
+                      {item.condition}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Low Resource Warnings */}
+          {(() => {
+            const warnings = getLowResourceWarnings(equipment);
+            if (warnings.length === 0) return null;
+
+            return (
+              <div className="pt-3 border-t border-red-900/50 mt-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-4 h-4 text-red-400" />
+                  <span className="text-sm text-red-300 font-semibold">Resource Warnings</span>
+                </div>
+                <div className="space-y-1.5">
+                  {warnings.map((warning, idx) => (
+                    <div
+                      key={idx}
+                      className={`
+                        p-2 rounded text-xs flex items-start gap-2
+                        ${warning.warning.startsWith('CRITICAL')
+                          ? 'bg-red-900/30 border border-red-700 text-red-200'
+                          : 'bg-orange-900/20 border border-orange-700 text-orange-200'
+                        }
+                      `}
+                    >
+                      <span className="text-base flex-shrink-0">
+                        {warning.warning.startsWith('CRITICAL') ? '🚨' : '⚠️'}
+                      </span>
+                      <div className="flex-1">
+                        <div className="font-semibold">{warning.warning}</div>
+                        {warning.quantity <= 1 && (
+                          <div className="text-[10px] mt-0.5 opacity-75">
+                            Gather or find more before it runs out
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })()}
+
           {currentTip && (
             <div className="pt-3 border-t border-gray-700 mt-3">
               <div className="flex items-center gap-2 mb-2">
@@ -229,6 +332,26 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
                   style={{ width: `${(gameState.discoveredPrinciples.size / 90) * 100}%` }}
                 />
               </div>
+
+              {/* Next Principles to Discover */}
+              {gameState && turnNumber >= 3 && (() => {
+                const nextPrinciples = getNextPrinciples(gameState, 2);
+                return nextPrinciples.length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Lock className="w-3 h-3 text-blue-400" />
+                      <span className="text-xs text-blue-300 font-medium">Almost Discovered:</span>
+                    </div>
+                    {nextPrinciples.map((next, idx) => (
+                      <div key={idx} className="pl-5 text-xs text-gray-400 leading-relaxed">
+                        <span className="mr-1">{getCategoryIcon(next.category)}</span>
+                        <span className="italic">{next.principle.substring(0, 60)}{next.principle.length > 60 ? '...' : ''}</span>
+                        <div className="text-[10px] text-gray-500 mt-0.5">Unlock: {next.hint}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
             </div>
           )}
         </div>
@@ -242,6 +365,65 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
           </div>
         </div>
       )}
+
+      {/* Rescue Status - Show after turn 2 */}
+      {gameState && turnNumber >= 2 && (() => {
+        const rescueStatus = calculateRescueStatus(gameState);
+        return (
+          <div className="pt-3 border-t border-blue-900/50 mt-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Radio className="w-5 h-5 text-blue-400" />
+              <div className="text-base font-medium text-blue-300">Rescue Status</div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-400">Signal Attempts:</span>
+                <span className="text-gray-300 font-mono">
+                  {rescueStatus.successfulSignals} / {rescueStatus.requiredSignals}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-400">Rescue Probability:</span>
+                <span className={`font-semibold ${getRescueProbabilityColor(rescueStatus.rescueProbability)}`}>
+                  {rescueStatus.rescueProbability.toFixed(0)}% ({getRescueProbabilityDescription(rescueStatus.rescueProbability)})
+                </span>
+              </div>
+
+              {rescueStatus.estimatedTurnsToRescue !== null && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-400">Est. Time:</span>
+                  <span className="text-gray-300 font-mono">
+                    {rescueStatus.estimatedTurnsToRescue} turn{rescueStatus.estimatedTurnsToRescue !== 1 ? 's' : ''}
+                  </span>
+                </div>
+              )}
+
+              {/* Progress bars for closest win condition */}
+              <div className="mt-3 space-y-2">
+                {rescueStatus.activeWinConditions
+                  .filter(c => c.progress > 0)
+                  .slice(0, 2)
+                  .map((condition, idx) => (
+                    <div key={idx} className="text-xs">
+                      <div className="flex justify-between mb-1">
+                        <span className="text-gray-400">{condition.description}</span>
+                        <span className="text-gray-500">{condition.progress.toFixed(0)}%</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-500 ${getWinConditionBarColor(condition.type)}`}
+                          style={{ width: `${condition.progress}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -417,4 +599,43 @@ function getFireLabel(value: number): string {
   if (value > 50) return 'Burning';
   if (value > 25) return 'Smoldering';
   return 'Out';
+}
+
+function getMoraleBarColor(value: number): string {
+  if (value > 70) return 'bg-green-500';
+  if (value > 60) return 'bg-green-600';
+  if (value > 50) return 'bg-yellow-500';
+  if (value > 30) return 'bg-orange-500';
+  return 'bg-red-500';
+}
+
+function getMoraleImpactDescription(morale: number): string {
+  const modifier = (morale - 50) / 100;
+  const successAdjustment = modifier * 0.2 * 100; // Convert to percentage
+
+  if (morale > 70) {
+    return `+${Math.round(successAdjustment)}% success rate, can attempt challenging climbs`;
+  } else if (morale > 60) {
+    return `+${Math.round(successAdjustment)}% success rate, steady performance`;
+  } else if (morale > 50) {
+    return `+${Math.round(successAdjustment)}% success rate, baseline performance`;
+  } else if (morale > 30) {
+    return `${Math.round(successAdjustment)}% success rate, decisions more risky`;
+  } else {
+    return `${Math.round(successAdjustment)}% success rate, prone to panic decisions`;
+  }
+}
+
+function getRescueProbabilityColor(probability: number): string {
+  if (probability >= 70) return 'text-green-400';
+  if (probability >= 50) return 'text-blue-400';
+  if (probability >= 30) return 'text-yellow-400';
+  if (probability >= 15) return 'text-orange-400';
+  return 'text-red-400';
+}
+
+function getWinConditionBarColor(type: 'signal' | 'navigate' | 'endure'): string {
+  if (type === 'signal') return 'bg-blue-500';
+  if (type === 'navigate') return 'bg-green-500';
+  return 'bg-purple-500';
 }
