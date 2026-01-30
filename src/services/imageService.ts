@@ -82,7 +82,7 @@ export async function getScenarioImage(
   );
 
   try {
-    const url = await generateImage(prompt, options);
+    const url = await generateImage(prompt);
 
     if (url) {
       imageCache.set(cacheKey, {
@@ -133,7 +133,7 @@ export async function batchGenerateScenarioImages(): Promise<void> {
     const prompt = getScenarioImagePrompt(env, weather, time);
 
     try {
-      const url = await generateImage(prompt, { quality: 'medium', format: 'webp' });
+      const url = await generateImage(prompt);
       if (url) {
         imageCache.set(cacheKey, {
           url,
@@ -169,8 +169,7 @@ export async function batchGenerateScenarioImages(): Promise<void> {
  * @returns Image URL or null
  */
 async function generateImage(
-  prompt: string,
-  _options: ImageGenerationOptions = {}
+  prompt: string
 ): Promise<string | null> {
   // TODO: Implement actual API call
   // For now, return null to use fallbacks
@@ -203,20 +202,23 @@ async function generateImage(
 }
 
 /**
- * Get fallback image/gradient for environment
- * Returns a CSS gradient or data URL for when AI generation fails
+ * Get fallback image for environment
+ * Returns stock image URL or CSS gradient if image not available
  */
 export function getFallbackImage(environment: Environment): string {
-  const fallbacks: Record<Environment, string> = {
-    mountains: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    desert: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-    forest: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-    coast: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-    tundra: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
-    'urban-edge': 'linear-gradient(135deg, #30cfd0 0%, #330867 100%)'
+  // Stock images - these should be placed in public/images/environments/
+  const stockImages: Record<Environment, string> = {
+    mountains: '/images/environments/mountains.jpg',
+    desert: '/images/environments/desert.jpg',
+    forest: '/images/environments/forest.jpg',
+    coast: '/images/environments/coast.jpg',
+    tundra: '/images/environments/tundra.jpg',
+    'urban-edge': '/images/environments/urban-edge.jpg'
   };
 
-  return fallbacks[environment];
+  // Return stock image path (will be used by <img> tag)
+  // If image doesn't exist, browser will show broken image
+  return stockImages[environment];
 }
 
 /**
