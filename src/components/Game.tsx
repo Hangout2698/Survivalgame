@@ -6,7 +6,7 @@ import { getEnvironmentTips } from '../engine/survivalPrinciplesService';
 import { generateScenario } from '../engine/scenarioGenerator';
 import { useInventory } from '../contexts/InventoryContext';
 import { ITEM_DATABASE } from '../data/itemDatabase';
-import { getTriggeredTutorialScenario } from '../data/tutorialScenarios';
+import { getTriggeredTutorialScenario, type TutorialScenario } from '../data/tutorialScenarios';
 import type { PlayerStats } from './StatusHUD';
 import { DangerVignette } from './DangerVignette';
 import { ActionHistory } from './ActionHistory';
@@ -29,7 +29,7 @@ import type { PrincipleCategory } from '../engine/survivalPrinciplesService';
 import { CloudSnow } from 'lucide-react';
 
 export function Game() {
-  const { resetInventory, resetConsumption, selectedItems } = useInventory();
+  const { resetConsumption, selectedItems } = useInventory();
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [loadoutComplete, setLoadoutComplete] = useState(false);
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -38,7 +38,7 @@ export function Game() {
   const [recentOutcome, setRecentOutcome] = useState<string>('');
   const [showOutcome, setShowOutcome] = useState(false);
   const [lastDecisionId, setLastDecisionId] = useState<string>('');
-  const [currentTutorialScenario, setCurrentTutorialScenario] = useState<any>(null);
+  const [currentTutorialScenario, setCurrentTutorialScenario] = useState<TutorialScenario | null>(null);
   const [completedTutorials, setCompletedTutorials] = useState<Set<string>>(new Set());
   const [notification, setNotification] = useState<{
     message: string;
@@ -258,7 +258,7 @@ export function Game() {
   const handleTutorialChoice = (choiceId: string) => {
     if (!currentTutorialScenario || !gameState) return;
 
-    const choice = currentTutorialScenario.choices.find((c: any) => c.id === choiceId);
+    const choice = currentTutorialScenario.choices.find(c => c.id === choiceId);
     if (!choice) return;
 
     // Apply tutorial scenario outcome to game state
