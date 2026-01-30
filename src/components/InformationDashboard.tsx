@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import { GameState } from '../types/game';
-import StatsTab from './dashboard/StatsTab';
 import EquipmentTab from './dashboard/EquipmentTab';
 import EnvironmentTab from './dashboard/EnvironmentTab';
 import HistoryTab from './dashboard/HistoryTab';
 
-type TabType = 'stats' | 'equipment' | 'environment' | 'history';
+type TabType = 'equipment' | 'environment' | 'history';
 
 interface InformationDashboardProps {
   gameState: GameState;
@@ -17,7 +16,6 @@ interface InformationDashboardProps {
  * Replaces SurvivalStatusDashboard with comprehensive game data access
  *
  * Tabs:
- * - Stats: All 9 metrics with thresholds and warnings
  * - Equipment: Item details, benefits, uses remaining
  * - Environment: Weather, temperature, wind, threats
  * - History: Extended decision log with quality indicators
@@ -26,10 +24,9 @@ const InformationDashboard: React.FC<InformationDashboardProps> = ({
   gameState,
   compact = false,
 }) => {
-  const [activeTab, setActiveTab] = useState<TabType>('stats');
+  const [activeTab, setActiveTab] = useState<TabType>('equipment');
 
   const tabs = [
-    { id: 'stats' as TabType, label: 'Stats', icon: '📊' },
     { id: 'equipment' as TabType, label: 'Equipment', icon: '🎒' },
     { id: 'environment' as TabType, label: 'Environment', icon: '🌡️' },
     { id: 'history' as TabType, label: 'History', icon: '📜' },
@@ -87,17 +84,6 @@ const InformationDashboard: React.FC<InformationDashboardProps> = ({
 
       {/* Tab Panels */}
       <div className="overflow-y-auto" style={{ maxHeight: compact ? '60vh' : '70vh' }}>
-        {activeTab === 'stats' && (
-          <div
-            role="tabpanel"
-            id="stats-panel"
-            aria-labelledby="stats-tab"
-            tabIndex={0}
-          >
-            <StatsTab gameState={gameState} compact={compact} />
-          </div>
-        )}
-
         {activeTab === 'equipment' && (
           <div
             role="tabpanel"
