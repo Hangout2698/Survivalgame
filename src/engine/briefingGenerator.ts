@@ -1,10 +1,24 @@
-import type { Scenario, Environment, Weather, TimeOfDay } from '../types/game';
+import type { Scenario, Environment, Weather, TimeOfDay, PlayerMetrics, Decision } from '../types/game';
 
 interface Backstory {
   text: string;
   injuries: string[];
   wetness: 'soaked' | 'damp' | 'dry';
   stress: string;
+}
+
+interface WeatherDescription {
+  current: string;
+  wind: string;
+  temp: string;
+  change: string;
+}
+
+interface TerrainDescription {
+  terrain: string;
+  elevation: string;
+  exposure: string;
+  ground: string;
 }
 
 const backstories: Record<Environment, Backstory[]> = {
@@ -294,7 +308,7 @@ function getWeatherDescription(weather: Weather, environment: Environment, tempe
     backstoryText.includes('storm')
   );
 
-  const descriptions: Record<Weather, any> = {
+  const descriptions: Record<Weather, WeatherDescription> = {
     clear: {
       current: environment === 'desert' ? 'Clear sky, sun beating down' : 'Clear sky',
       wind: temperature < 10 ? 'Light wind, cold' : 'Minimal wind',
@@ -344,7 +358,7 @@ function getLocationAndTerrain(environment: Environment): {
   exposure: string;
   ground: string;
 } {
-  const descriptions: Record<Environment, any> = {
+  const descriptions: Record<Environment, TerrainDescription> = {
     mountains: {
       terrain: 'Mountain terrain, rocky slopes',
       elevation: 'Mid to high elevation',
@@ -506,7 +520,7 @@ function getStayVsGoAnalysis(environment: Environment): {
   travelDistance: string;
   travelTerrain: string;
 } {
-  const analyses: Record<Environment, any> = {
+  const analyses: Record<Environment, { travelDistance: string; travelTerrain: string }> = {
     mountains: {
       travelDistance: 'Trail approximately one to two kilometers back',
       travelTerrain: 'Rocky terrain, unstable footing, 200 meter descent'
@@ -616,10 +630,10 @@ export function generateBriefing(scenario: Scenario): string {
 
 export function generateConciseBrief(
   scenario: Scenario,
-  metrics: any,
+  metrics: PlayerMetrics,
   currentTimeOfDay: TimeOfDay,
   lastOutcome?: {
-    decision: any;
+    decision: Decision;
     immediateEffect: string;
     decisionQuality?: string;
     survivalPrincipleAlignment?: string;

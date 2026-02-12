@@ -1,5 +1,7 @@
 import type { Scenario, Environment, Weather, TimeOfDay, Equipment } from '../types/game';
 import { enrichScenarioWithImageData } from '../services/imageService';
+import { getRecommendedCategories, getTotalStats } from './knowledgeTracker';
+import type { PrincipleCategory } from './survivalPrinciplesService';
 
 const environments: Environment[] = ['mountains', 'desert', 'forest', 'coast', 'tundra', 'urban-edge'];
 
@@ -12,25 +14,54 @@ const weatherByEnvironment: Record<Environment, Weather[]> = {
   'urban-edge': ['clear', 'rain', 'wind', 'storm']
 };
 
+// Map principle categories to environments that test those skills
+const categoryToEnvironments: Record<PrincipleCategory, Environment[]> = {
+  shelter: ['mountains', 'tundra', 'forest'], // Cold/harsh conditions test shelter skills
+  water: ['desert', 'coast', 'tundra'], // Water scarcity or purification challenges
+  fire: ['tundra', 'mountains', 'forest'], // Cold environments require fire mastery
+  food: ['forest', 'coast', 'desert'], // Foraging and resource identification
+  navigation: ['desert', 'forest', 'tundra'], // Difficult terrain for navigation
+  signaling: ['coast', 'mountains', 'urban-edge'], // Open areas good for signaling
+  firstAid: ['mountains', 'urban-edge', 'forest'], // Injury risks from terrain
+  priorities: ['desert', 'tundra', 'mountains'], // Extreme conditions test prioritization
+  psychology: ['tundra', 'desert', 'urban-edge'], // Isolation and harsh conditions
+  weather: ['mountains', 'coast', 'tundra'] // Variable weather challenges
+};
+
 const timesOfDay: TimeOfDay[] = ['dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night'];
 
 const equipmentPool: Equipment[] = [
-  { name: 'Water bottle (half full)', quantity: 1, condition: 'good' },
-  { name: 'Emergency blanket', quantity: 1, condition: 'good' },
-  { name: 'Lighter', quantity: 1, condition: 'worn' },
-  { name: 'Signal mirror', quantity: 1, condition: 'good' },
-  { name: 'Whistle', quantity: 1, condition: 'good' },
-  { name: 'Knife', quantity: 1, condition: 'good' },
-  { name: 'Torn tarp', quantity: 1, condition: 'damaged' },
-  { name: 'Flashlight', quantity: 1, condition: 'worn' },
-  { name: 'Energy bar', quantity: 2, condition: 'good' },
-  { name: 'Phone (no signal, 15% battery)', quantity: 1, condition: 'good' },
-  { name: 'Rope (10ft)', quantity: 1, condition: 'worn' },
-  { name: 'First aid kit (partial)', quantity: 1, condition: 'worn' },
-  { name: 'Tinder bundle', quantity: 2, condition: 'good' },
-  { name: 'Kindling sticks', quantity: 3, condition: 'good' },
-  { name: 'Fuel logs', quantity: 1, condition: 'good' },
-  { name: 'Matches', quantity: 1, condition: 'good' }
+  // Water & Hydration
+  { name: 'Water bottle (half full)', quantity: 1, condition: 'good', volumeLiters: 1.0 },
+
+  // Shelter & Warmth (BULKY)
+  { name: 'Emergency blanket', quantity: 1, condition: 'good', volumeLiters: 0.5 }, // Compact foil blanket
+  { name: 'Torn tarp', quantity: 1, condition: 'damaged', volumeLiters: 3.5 }, // Bulky when folded
+
+  // Fire Starting
+  { name: 'Lighter', quantity: 1, condition: 'worn', volumeLiters: 0.05 }, // Tiny
+  { name: 'Matches', quantity: 1, condition: 'good', volumeLiters: 0.1 }, // Small box
+  { name: 'Tinder bundle', quantity: 2, condition: 'good', volumeLiters: 0.3 },
+  { name: 'Kindling sticks', quantity: 3, condition: 'good', volumeLiters: 1.5 }, // Awkward
+  { name: 'Fuel logs', quantity: 1, condition: 'good', volumeLiters: 2.0 }, // Very bulky
+
+  // Signaling
+  { name: 'Signal mirror', quantity: 1, condition: 'good', volumeLiters: 0.15 },
+  { name: 'Whistle', quantity: 1, condition: 'good', volumeLiters: 0.05 }, // Tiny
+  { name: 'Flashlight', quantity: 1, condition: 'worn', volumeLiters: 0.3 },
+
+  // Tools
+  { name: 'Knife', quantity: 1, condition: 'good', volumeLiters: 0.2 },
+  { name: 'Rope (10ft)', quantity: 1, condition: 'worn', volumeLiters: 1.2 },
+
+  // Medical
+  { name: 'First aid kit (partial)', quantity: 1, condition: 'worn', volumeLiters: 1.5 },
+
+  // Food
+  { name: 'Energy bar', quantity: 2, condition: 'good', volumeLiters: 0.2 },
+
+  // Electronics
+  { name: 'Phone (no signal, 15% battery)', quantity: 1, condition: 'good', volumeLiters: 0.15 }
 ];
 
 const initialConditions = [
@@ -51,8 +82,83 @@ function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+/**
+ * Select environment using weighted probability based on weak knowledge areas
+ * Returns an environment that tests the player's weakest skills
+ */
+function selectAdaptiveEnvironment(): Environment {
+  const stats = getTotalStats();
+
+  // If no sessions played yet, use pure random
+  if (stats.totalSessions === 0) {
+    return random(environments);
+  }
+
+  const weakCategories = getRecommendedCategories();
+
+  // If no weak areas (all balanced), use pure random
+  if (weakCategories.length === 0) {
+    return random(environments);
+  }
+
+  // Build weighted environment pool
+  const environmentWeights: Map<Environment, number> = new Map();
+
+  // Initialize all environments with base weight of 1
+  environments.forEach(env => environmentWeights.set(env, 1));
+
+  // Add weight for environments that test weak categories
+  weakCategories.forEach(category => {
+    const targetEnvironments = categoryToEnvironments[category];
+    targetEnvironments.forEach(env => {
+      const current = environmentWeights.get(env) || 1;
+      environmentWeights.set(env, current + 2); // +2 weight per weak category
+    });
+  });
+
+  // Create weighted selection array
+  const weightedPool: Environment[] = [];
+  environmentWeights.forEach((weight, env) => {
+    for (let i = 0; i < weight; i++) {
+      weightedPool.push(env);
+    }
+  });
+
+  return random(weightedPool);
+}
+
+function getBackpackCapacity(environment: Environment): number {
+  // Backpack size varies by environment context
+  switch (environment) {
+    case 'urban-edge':
+      return randomInt(18, 25); // Small daypack - urban escape scenario
+    case 'coast':
+    case 'forest':
+      return randomInt(28, 38); // Standard daypack - day hike gone wrong
+    case 'mountains':
+    case 'desert':
+      return randomInt(35, 50); // Larger pack - prepared for longer trips
+    case 'tundra':
+      return randomInt(45, 65); // Expedition pack - serious backcountry
+    default:
+      return 35;
+  }
+}
+
+function generateAvailableEquipment(): Equipment[] {
+  // Generate a randomized pool of ALL equipment for player to choose from
+  // Shuffle the equipment pool to randomize what's available
+  const shuffled = [...equipmentPool].sort(() => Math.random() - 0.5);
+
+  // Return 10-14 items from the pool (out of 16 total)
+  const itemCount = randomInt(10, 14);
+  return shuffled.slice(0, itemCount).map(item => ({ ...item }));
+}
+
+// Legacy function - kept for potential tutorial mode or quick start later
+// This creates a basic balanced loadout automatically
+// @ts-expect-error - Function kept for future tutorial mode
 function selectRandomEquipment(): Equipment[] {
-  // Categorize equipment to ensure balanced loadouts
   const fireStarters = ['Lighter', 'Matches', 'Tinder bundle'];
   const waterItems = ['Water bottle (half full)'];
   const signalingItems = ['Signal mirror', 'Whistle', 'Flashlight'];
@@ -165,13 +271,49 @@ function getWindSpeed(environment: Environment, weather: Weather): number {
   return Math.max(0, baseWind);
 }
 
+/**
+ * Generate a scenario that adapts to player's knowledge gaps
+ * Uses knowledge tracker to target weak areas while maintaining variety
+ */
 export function generateScenario(): Scenario {
-  const environment = random(environments);
-  const weather = random(weatherByEnvironment[environment]);
+  // Use adaptive selection to target weak knowledge areas
+  const environment = selectAdaptiveEnvironment();
+
+  // Weight weather selection toward challenging conditions for weak categories
+  const weakCategories = getRecommendedCategories();
+  let weather = random(weatherByEnvironment[environment]);
+
+  // If fire/shelter are weak, bias toward harsh weather
+  if (weakCategories.includes('fire') || weakCategories.includes('shelter')) {
+    const harshWeather = weatherByEnvironment[environment].filter(w =>
+      w === 'snow' || w === 'storm' || w === 'wind'
+    );
+    if (harshWeather.length > 0 && Math.random() < 0.6) {
+      weather = random(harshWeather);
+    }
+  }
+
+  // If water is weak, bias toward hot/dry conditions in appropriate environments
+  if (weakCategories.includes('water')) {
+    if ((environment === 'desert' || environment === 'coast') && Math.random() < 0.6) {
+      const dryWeather = weatherByEnvironment[environment].filter(w =>
+        w === 'heat' || w === 'clear'
+      );
+      if (dryWeather.length > 0) {
+        weather = random(dryWeather);
+      }
+    }
+  }
+
   const timeOfDay = random(timesOfDay);
   const temperature = getTemperatureRange(environment, weather, timeOfDay);
   const windSpeed = getWindSpeed(environment, weather);
-  const equipment = selectRandomEquipment();
+  const backpackCapacityLiters = getBackpackCapacity(environment);
+  const availableEquipment = generateAvailableEquipment();
+
+  // Start with empty equipment - player will choose during loadout phase
+  const equipment: Equipment[] = [];
+
   const initialCondition = random(initialConditions);
   const distanceToSafety = getDistanceDescription();
   const terrainDifficulty = randomInt(3, 8);
@@ -183,6 +325,8 @@ export function generateScenario(): Scenario {
     temperature,
     windSpeed,
     equipment,
+    backpackCapacityLiters,
+    availableEquipment,
     initialCondition,
     distanceToSafety,
     terrainDifficulty,

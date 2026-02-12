@@ -13,8 +13,10 @@ import type {
   PlayerConditionFactors,
   MetricBreakdown,
   StatChangeReason,
-  Weather
+  Weather,
+  PlayerMetrics
 } from '../types/game';
+import { getEducationalFeedback } from './survivalPrinciplesService';
 
 // Determine visibility based on weather
 function getVisibility(weather: Weather): 'clear' | 'reduced' | 'poor' | 'whiteout' {
@@ -396,7 +398,7 @@ function generateRiskBreakdown(
 function generateDetailedNarrative(
   decision: Decision,
   _gameState: GameState,
-  metricsChange: any,
+  metricsChange: Partial<PlayerMetrics>,
   outcomeType: string,
   envContext: EnvironmentalContext,
   playerFactors: PlayerConditionFactors
@@ -447,7 +449,7 @@ function generateDetailedNarrative(
   }
 
   // Risk warning
-  if (metricsChange.cumulativeRisk > 15) {
+  if (metricsChange.cumulativeRisk && metricsChange.cumulativeRisk > 15) {
     parts.push(`This significantly increased your overall danger level - exhausted bodies in harsh conditions are vulnerable to injury and hypothermia.`);
   }
 
@@ -496,7 +498,7 @@ function generateRecommendations(
 export function generateConsequenceExplanation(
   decision: Decision,
   gameState: GameState,
-  metricsChange: any,
+  metricsChange: Partial<PlayerMetrics>,
   immediateEffect: string,
   decisionQuality?: 'excellent' | 'good' | 'poor' | 'critical-error'
 ): ConsequenceExplanation {
@@ -515,9 +517,9 @@ export function generateConsequenceExplanation(
   let riskAssessment: ConsequenceExplanation['riskAssessment'] = 'manageable';
   if (metricsChange.energy && metricsChange.energy < -40 && playerFactors.energyLevel < 50) {
     riskAssessment = 'critical';
-  } else if (metricsChange.cumulativeRisk > 15 || outcomeType === 'critical-failure') {
+  } else if ((metricsChange.cumulativeRisk && metricsChange.cumulativeRisk > 15) || outcomeType === 'critical-failure') {
     riskAssessment = 'dangerous';
-  } else if (metricsChange.cumulativeRisk > 8) {
+  } else if (metricsChange.cumulativeRisk && metricsChange.cumulativeRisk > 8) {
     riskAssessment = 'risky';
   } else if (outcomeType === 'success') {
     riskAssessment = 'safe';
@@ -613,15 +615,17 @@ export function generateConsequenceExplanation(
     envContext
   );
 
-  // Generate lesson
+  // Generate lesson using survival principles
+  // Only include if not already shown in this session to avoid repetition
+  const quality = decisionQuality || 'good';
   let lessonLearned: string | undefined;
-  if (outcomeType === 'critical-failure') {
-    lessonLearned = `Extreme efforts require adequate energy reserves and favorable conditions. Never attempt high-risk actions when exhausted.`;
-  } else if (outcomeType === 'failure' && envContext.visibility === 'whiteout') {
-    lessonLearned = `Navigation in whiteout conditions is nearly impossible. Wait for better visibility or focus on shelter and signaling.`;
-  } else if (outcomeType === 'success' && decision.id.includes('shelter')) {
-    lessonLearned = `Shelter is the foundation of survival - it protects against environmental threats and enables effective rest.`;
-  }
+
+  // Try to get a principle that hasn't been shown yet this session
+  const potentialLesson = getEducationalFeedback(decision.id, quality);
+
+  // Import getCurrentSessionPrinciples to check if already shown
+  // For now, always include the lesson (repetition filter will be in Game component)
+  lessonLearned = potentialLesson || undefined;
 
   return {
     summary,

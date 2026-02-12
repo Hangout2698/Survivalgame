@@ -1,15 +1,16 @@
 import { useState } from 'react';
-import type { ConsequenceExplanation } from '../types/game';
-import { AlertTriangle, ChevronDown, ChevronUp, Info, TrendingUp, TrendingDown, Activity, Lightbulb } from 'lucide-react';
+import type { ConsequenceExplanation, MetricBreakdown, PlayerMetrics } from '../types/game';
+import { AlertTriangle, ChevronDown, ChevronUp, Info, TrendingUp, TrendingDown, Activity, Lightbulb, X } from 'lucide-react';
 
 interface ConsequenceExplanationPanelProps {
   explanation: ConsequenceExplanation;
-  metricsChange: any;
+  metricsChange: Partial<PlayerMetrics>;
 }
 
 export function ConsequenceExplanationPanel({ explanation, metricsChange }: ConsequenceExplanationPanelProps) {
   const [showDetailed, setShowDetailed] = useState(false);
   const [showMechanical, setShowMechanical] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
 
   const getRiskColor = (assessment: ConsequenceExplanation['riskAssessment']) => {
     switch (assessment) {
@@ -23,10 +24,36 @@ export function ConsequenceExplanationPanel({ explanation, metricsChange }: Cons
 
   const riskStyle = getRiskColor(explanation.riskAssessment);
 
+  // If minimized, show just a single line
+  if (isMinimized) {
+    return (
+      <button
+        onClick={() => setIsMinimized(false)}
+        className={`w-full p-4 rounded-lg border-2 ${riskStyle.bg} ${riskStyle.border} hover:opacity-80 transition-opacity text-left`}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">{riskStyle.icon}</span>
+            <p className="text-sm text-gray-300">{explanation.summary}</p>
+          </div>
+          <ChevronDown className="w-5 h-5 text-gray-300 flex-shrink-0" />
+        </div>
+      </button>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* TIER 1: Quick Summary */}
-      <div className={`p-6 rounded-xl border-2 ${riskStyle.bg} ${riskStyle.border}`}>
+      <div className={`relative p-6 rounded-xl border-2 ${riskStyle.bg} ${riskStyle.border}`}>
+        {/* Minimize button */}
+        <button
+          onClick={() => setIsMinimized(true)}
+          className="absolute top-3 right-3 p-2 hover:bg-white/10 rounded-lg transition-colors"
+          aria-label="Minimize"
+        >
+          <X className="w-4 h-4 text-gray-300" />
+        </button>
         <div className="flex items-start gap-3 mb-3">
           <span className="text-3xl">{riskStyle.icon}</span>
           <div className="flex-1">
@@ -47,7 +74,7 @@ export function ConsequenceExplanationPanel({ explanation, metricsChange }: Cons
 
             return (
               <div key={key} className={`p-3 rounded-lg ${isNegative ? 'bg-red-900/40' : 'bg-green-900/40'}`}>
-                <div className="text-xs text-gray-400 capitalize mb-1">
+                <div className="text-xs text-gray-300 capitalize mb-1">
                   {formatMetricName(key)}
                 </div>
                 <div className={`text-xl font-mono font-bold flex items-center gap-1 ${
@@ -75,9 +102,9 @@ export function ConsequenceExplanationPanel({ explanation, metricsChange }: Cons
             </span>
           </div>
           {showDetailed ? (
-            <ChevronUp className="w-5 h-5 text-gray-400" />
+            <ChevronUp className="w-5 h-5 text-gray-300" />
           ) : (
-            <ChevronDown className="w-5 h-5 text-gray-400" />
+            <ChevronDown className="w-5 h-5 text-gray-300" />
           )}
         </button>
 
@@ -102,25 +129,25 @@ export function ConsequenceExplanationPanel({ explanation, metricsChange }: Cons
               </h4>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                 <div>
-                  <div className="text-gray-500 text-xs mb-1">Weather</div>
+                  <div className="text-gray-300 text-xs mb-1">Weather</div>
                   <div className="text-gray-200 font-medium capitalize">
                     {explanation.environmentalFactors.weather}
                   </div>
                 </div>
                 <div>
-                  <div className="text-gray-500 text-xs mb-1">Temperature</div>
+                  <div className="text-gray-300 text-xs mb-1">Temperature</div>
                   <div className="text-gray-200 font-medium">
                     {explanation.environmentalFactors.temperature}°C
                   </div>
                 </div>
                 <div>
-                  <div className="text-gray-500 text-xs mb-1">Wind Speed</div>
+                  <div className="text-gray-300 text-xs mb-1">Wind Speed</div>
                   <div className="text-gray-200 font-medium">
                     {explanation.environmentalFactors.windSpeed} km/h
                   </div>
                 </div>
                 <div>
-                  <div className="text-gray-500 text-xs mb-1">Visibility</div>
+                  <div className="text-gray-300 text-xs mb-1">Visibility</div>
                   <div className="text-gray-200 font-medium capitalize">
                     {explanation.environmentalFactors.visibility === 'whiteout' ? '❌ Whiteout' :
                      explanation.environmentalFactors.visibility === 'poor' ? '⚠️ Poor' :
@@ -128,13 +155,13 @@ export function ConsequenceExplanationPanel({ explanation, metricsChange }: Cons
                   </div>
                 </div>
                 <div>
-                  <div className="text-gray-500 text-xs mb-1">Time of Day</div>
+                  <div className="text-gray-300 text-xs mb-1">Time of Day</div>
                   <div className="text-gray-200 font-medium capitalize">
                     {explanation.environmentalFactors.timeOfDay}
                   </div>
                 </div>
                 <div>
-                  <div className="text-gray-500 text-xs mb-1">Challenge Level</div>
+                  <div className="text-gray-300 text-xs mb-1">Challenge Level</div>
                   <div className={`font-bold ${
                     explanation.environmentalFactors.challengeMultiplier > 1.3 ? 'text-red-400' :
                     explanation.environmentalFactors.challengeMultiplier > 1.15 ? 'text-orange-400' :
@@ -154,7 +181,7 @@ export function ConsequenceExplanationPanel({ explanation, metricsChange }: Cons
               </h4>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                 <div>
-                  <div className="text-gray-500 text-xs mb-1">Energy Level</div>
+                  <div className="text-gray-300 text-xs mb-1">Energy Level</div>
                   <div className={`font-bold ${
                     explanation.playerFactors.energyLevel < 30 ? 'text-red-400' :
                     explanation.playerFactors.energyLevel < 50 ? 'text-orange-400' :
@@ -164,7 +191,7 @@ export function ConsequenceExplanationPanel({ explanation, metricsChange }: Cons
                   </div>
                 </div>
                 <div>
-                  <div className="text-gray-500 text-xs mb-1">Hydration</div>
+                  <div className="text-gray-300 text-xs mb-1">Hydration</div>
                   <div className={`font-bold ${
                     explanation.playerFactors.hydrationLevel < 30 ? 'text-red-400' :
                     explanation.playerFactors.hydrationLevel < 50 ? 'text-orange-400' :
@@ -174,7 +201,7 @@ export function ConsequenceExplanationPanel({ explanation, metricsChange }: Cons
                   </div>
                 </div>
                 <div>
-                  <div className="text-gray-500 text-xs mb-1">Body Temp</div>
+                  <div className="text-gray-300 text-xs mb-1">Body Temp</div>
                   <div className={`font-bold ${
                     explanation.playerFactors.bodyTemp < 35 ? 'text-blue-400' :
                     explanation.playerFactors.bodyTemp < 36.5 ? 'text-cyan-400' :
@@ -184,7 +211,7 @@ export function ConsequenceExplanationPanel({ explanation, metricsChange }: Cons
                   </div>
                 </div>
                 <div>
-                  <div className="text-gray-500 text-xs mb-1">Energy Deficit</div>
+                  <div className="text-gray-300 text-xs mb-1">Energy Deficit</div>
                   <div className={`font-bold ${
                     explanation.playerFactors.energyDeficiency > 30 ? 'text-red-400' :
                     explanation.playerFactors.energyDeficiency > 10 ? 'text-orange-400' : 'text-green-400'
@@ -194,7 +221,7 @@ export function ConsequenceExplanationPanel({ explanation, metricsChange }: Cons
                   </div>
                 </div>
                 <div>
-                  <div className="text-gray-500 text-xs mb-1">Condition Penalty</div>
+                  <div className="text-gray-300 text-xs mb-1">Condition Penalty</div>
                   <div className={`font-bold ${
                     explanation.playerFactors.conditionMultiplier > 1.3 ? 'text-red-400' :
                     explanation.playerFactors.conditionMultiplier > 1.15 ? 'text-orange-400' :
@@ -253,9 +280,9 @@ export function ConsequenceExplanationPanel({ explanation, metricsChange }: Cons
             </span>
           </div>
           {showMechanical ? (
-            <ChevronUp className="w-5 h-5 text-gray-400" />
+            <ChevronUp className="w-5 h-5 text-gray-300" />
           ) : (
-            <ChevronDown className="w-5 h-5 text-gray-400" />
+            <ChevronDown className="w-5 h-5 text-gray-300" />
           )}
         </button>
 
@@ -320,7 +347,7 @@ export function ConsequenceExplanationPanel({ explanation, metricsChange }: Cons
 interface MetricBreakdownDisplayProps {
   name: string;
   icon: string;
-  breakdown: any;
+  breakdown: MetricBreakdown;
   color: string;
 }
 
@@ -334,14 +361,14 @@ function MetricBreakdownDisplay({ name, icon, breakdown, color }: MetricBreakdow
 
       {/* Calculation formula */}
       {breakdown.calculation && (
-        <div className="mb-3 p-3 bg-gray-900/50 rounded font-mono text-xs text-gray-400">
+        <div className="mb-3 p-3 bg-gray-900/50 rounded font-mono text-xs text-gray-300">
           {breakdown.calculation}
         </div>
       )}
 
       {/* Detailed reasons */}
       <div className="space-y-2">
-        {breakdown.reasons.map((reason: any, idx: number) => (
+        {breakdown.reasons.map((reason, idx: number) => (
           <div key={idx} className="flex items-start gap-3 text-sm">
             <div className={`px-2 py-1 rounded font-mono font-bold flex-shrink-0 ${
               reason.amount < 0 ? 'bg-red-900/40 text-red-300' : 'bg-green-900/40 text-green-300'
@@ -350,7 +377,7 @@ function MetricBreakdownDisplay({ name, icon, breakdown, color }: MetricBreakdow
             </div>
             <div className="flex-1">
               <div className="text-gray-300">{reason.reason}</div>
-              <div className="text-xs text-gray-500 capitalize mt-0.5">
+              <div className="text-xs text-gray-300 capitalize mt-0.5">
                 ({reason.category} factor)
               </div>
             </div>

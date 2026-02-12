@@ -15,7 +15,8 @@ import {
   getInjuryStatus,
   getInjuryLabel,
   isCritical,
-  getCriticalWarning
+  getCriticalWarning,
+  type StatusConfig
 } from '../utils/statusThresholds';
 
 interface SurvivalStatusDashboardProps {
@@ -164,20 +165,20 @@ export function SurvivalStatusDashboard({ metrics, scenario, compact = false }: 
             onClick={() => setShowEnvironmental(!showEnvironmental)}
             className="w-full px-5 py-3 flex items-center justify-between hover:bg-gray-800/50 transition-colors"
           >
-            <span className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
+            <span className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
               Environmental Conditions
             </span>
             {showEnvironmental ? (
-              <ChevronUp className="w-4 h-4 text-gray-500" />
+              <ChevronUp className="w-4 h-4 text-gray-300" />
             ) : (
-              <ChevronDown className="w-4 h-4 text-gray-500" />
+              <ChevronDown className="w-4 h-4 text-gray-300" />
             )}
           </button>
 
           {showEnvironmental && (
             <div className="px-5 pb-4 grid grid-cols-2 gap-3">
               <div className="p-3 bg-gray-800/50 rounded">
-                <div className="text-xs text-gray-500 mb-1">Ambient Temp</div>
+                <div className="text-xs text-gray-300 mb-1">Ambient Temp</div>
                 <div className={`text-base font-mono font-bold ${
                   scenario.temperature < 0 ? 'text-blue-400' :
                   scenario.temperature < 10 ? 'text-cyan-400' :
@@ -190,14 +191,14 @@ export function SurvivalStatusDashboard({ metrics, scenario, compact = false }: 
               </div>
 
               <div className="p-3 bg-gray-800/50 rounded">
-                <div className="text-xs text-gray-500 mb-1">Wind Speed</div>
+                <div className="text-xs text-gray-300 mb-1">Wind Speed</div>
                 <div className="text-base font-mono font-bold text-gray-300">
                   {scenario.windSpeed} km/h
                 </div>
               </div>
 
               <div className="col-span-2 p-3 bg-gray-800/50 rounded">
-                <div className="text-xs text-gray-500 mb-1">Weather</div>
+                <div className="text-xs text-gray-300 mb-1">Weather</div>
                 <div className="text-sm text-gray-300 capitalize">
                   {scenario.weather}
                 </div>
@@ -216,7 +217,7 @@ interface StatBarProps {
   max: number;
   min?: number;
   displayValue?: string;
-  status: any;
+  status: StatusConfig;
   statusLabel: string;
   icon: string;
   showThresholds?: boolean;
@@ -274,7 +275,7 @@ function StatBar({
               onMouseLeave={() => setShowTooltip(false)}
               className="relative flex-shrink-0"
             >
-              <Info className="w-3 h-3 text-gray-500 hover:text-gray-300" />
+              <Info className="w-3 h-3 text-gray-300 hover:text-gray-300" />
               {showTooltip && thresholds && (
                 <div className="absolute left-0 bottom-full mb-2 w-64 p-2 bg-gray-950 border border-gray-600 rounded shadow-xl text-xs text-gray-300 z-50">
                   {thresholds}

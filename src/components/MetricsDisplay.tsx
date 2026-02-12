@@ -111,13 +111,13 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
           </div>
           {hoursElapsed !== undefined && (
             <div className="text-right">
-              <div className="text-sm text-gray-400">Day {dayNumber}</div>
-              <div className="text-xs text-gray-500">{hoursElapsed}h total</div>
+              <div className="text-sm text-gray-200">Day {dayNumber}</div>
+              <div className="text-xs text-gray-300">{hoursElapsed}h total</div>
             </div>
           )}
         </div>
         {hoursElapsed !== undefined && (
-          <div className="text-xs text-gray-400 flex items-center gap-2">
+          <div className="text-xs text-gray-300 flex items-center gap-2">
             <Clock className="w-3 h-3" />
             <span>Hour {hoursIntoDay} of Day {dayNumber}</span>
           </div>
@@ -127,19 +127,19 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
       {currentTimeOfDay && (
         <div className="pb-3 border-b border-gray-700">
           <div className="flex items-center gap-2 mb-2">
-            <Clock className="w-5 h-5 text-gray-400" />
+            <Clock className="w-5 h-5 text-gray-300" />
             <div className="text-base font-medium text-gray-300">Time</div>
           </div>
           <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <span className="text-gray-400">Time of Day</span>
+              <span className="text-gray-300">Time of Day</span>
               <span className={`font-mono font-medium ${getTimeOfDayColor(currentTimeOfDay)}`}>
                 {formatTimeOfDay(currentTimeOfDay)}
               </span>
             </div>
             {hoursElapsed !== undefined && (
               <div className="flex justify-between items-center">
-                <span className="text-gray-400">Hours Elapsed</span>
+                <span className="text-gray-300">Hours Elapsed</span>
                 <span className="font-mono text-gray-300">{hoursElapsed}h</span>
               </div>
             )}
@@ -150,7 +150,7 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
                   style={{ width: `${getTimePeriodProgress(currentTimeOfDay)}%` }}
                 />
               </div>
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
+              <div className="flex justify-between text-xs text-gray-400 mt-1">
                 <span>Dawn</span>
                 <span>Day</span>
                 <span>Dusk</span>
@@ -191,7 +191,7 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
         metricRange={{ min: 0, max: 100 }}
       />
       <div className={`relative rounded p-2 -mx-2 transition-colors ${flashingMetrics.bodyTemperature ? `flash-${flashingMetrics.bodyTemperature}` : ''}`}>
-        <div className="flex justify-between text-base text-gray-400 mb-1">
+        <div className="flex justify-between text-base text-gray-300 mb-1">
           <div className="flex items-center gap-2">
             <span>Body Temperature</span>
             {isCritical('bodyTemperature', metrics.bodyTemperature) && (
@@ -210,7 +210,7 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
             />
           </div>
           <div className="absolute top-0 left-1/2 w-0.5 h-4 bg-white opacity-50" style={{ transform: 'translateX(-50%)' }} />
-          <div className="flex justify-between text-xs text-gray-500 mt-1">
+          <div className="flex justify-between text-xs text-gray-400 mt-1">
             <span>32°C Hypothermic</span>
             <span>37°C Normal</span>
             <span>42°C Heat Exhaustion</span>
@@ -253,14 +253,14 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
 
       <div className={`pt-3 border-t border-gray-700 relative rounded p-2 -mx-2 transition-colors ${flashingMetrics.morale ? `flash-${flashingMetrics.morale}` : ''}`}>
         <div className="flex items-center gap-2 mb-1">
-          <div className="text-base text-gray-400 flex items-center gap-2">
+          <div className="text-base text-gray-300 flex items-center gap-2">
             Morale
             {isCritical('morale', metrics.morale) && (
               <AlertTriangle className="w-4 h-4 text-red-400 animate-pulse" />
             )}
           </div>
           <div className="group relative">
-            <HelpCircle className="w-4 h-4 text-gray-500 hover:text-gray-300 cursor-help" />
+            <HelpCircle className="w-4 h-4 text-gray-400 hover:text-gray-300 cursor-help" />
             <div className="absolute left-0 bottom-full mb-2 w-64 bg-gray-900 border border-gray-700 rounded p-3 text-xs text-gray-300 hidden group-hover:block z-50 shadow-lg">
               <div className="font-semibold text-blue-400 mb-1">Morale affects:</div>
               <ul className="space-y-1 list-disc list-inside">
@@ -269,7 +269,7 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
                 <li>Survival probability</li>
                 <li>Unlocks special decisions</li>
               </ul>
-              <div className="mt-2 text-gray-400 italic">
+              <div className="mt-2 text-gray-300 italic">
                 Current impact: {getMoraleImpactDescription(metrics.morale)}
               </div>
             </div>
@@ -324,16 +324,16 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
         <div className="pt-2 border-t border-gray-700">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <div className="text-base text-gray-400 mb-1">Ambient Temp</div>
+              <div className="text-base text-gray-300 mb-1">Ambient Temp</div>
               <div className={`text-lg font-mono ${getAmbientTempColor(scenario.temperature)}`}>
                 {scenario.temperature}°C
               </div>
             </div>
             <div>
-              <div className="text-base text-gray-400 mb-1">Wind</div>
+              <div className="text-base text-gray-300 mb-1">Wind</div>
               <div className="text-lg text-gray-300">
                 <div className="font-mono">{scenario.windSpeed} km/h</div>
-                <div className="text-sm text-gray-400">{getWindDescription(scenario.windSpeed)}</div>
+                <div className="text-sm text-gray-300">{getWindDescription(scenario.windSpeed)}</div>
               </div>
             </div>
           </div>
@@ -346,7 +346,7 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
       )}
       {metrics.injurySeverity > 0 && (
         <div>
-          <div className="text-base text-gray-400 mb-1">Injury Severity</div>
+          <div className="text-base text-gray-300 mb-1">Injury Severity</div>
           <div className={`text-2xl font-mono ${getInjuryColor(metrics.injurySeverity)}`}>
             {getInjuryLabel(metrics.injurySeverity)}
           </div>
@@ -354,7 +354,7 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
       )}
 
       <div className="pt-3 border-t border-gray-700">
-        <div className="text-base text-gray-400 mb-1">Shelter</div>
+        <div className="text-base text-gray-300 mb-1">Shelter</div>
         <div className="flex items-center gap-2">
           <div className="flex-1 h-3 bg-gray-800 rounded-full overflow-hidden">
             <div
@@ -371,7 +371,7 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
       <div className="pt-3 border-t border-gray-700">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-xl">🔥</span>
-          <div className="text-base text-gray-400">Fire</div>
+          <div className="text-base text-gray-300">Fire</div>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex-1 h-3 bg-gray-800 rounded-full overflow-hidden">
@@ -389,7 +389,7 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
       {equipment.length > 0 && (
         <div className="pt-3 border-t border-gray-700">
           <div className="flex items-center gap-2 mb-2">
-            <Package className="w-5 h-5 text-gray-400" />
+            <Package className="w-5 h-5 text-gray-300" />
             <div className="text-base font-medium text-gray-300">Equipment</div>
           </div>
           <div className="space-y-1.5">
@@ -398,12 +398,12 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
               return (
                 <div key={index} className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2">
-                    <ItemIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                    <span className="text-gray-400">{item.name}</span>
+                    <ItemIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <span className="text-gray-300">{item.name}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     {item.quantity > 1 && (
-                      <span className="text-gray-500">×{item.quantity}</span>
+                      <span className="text-gray-400">×{item.quantity}</span>
                     )}
                     <span className={`${getConditionColor(item.condition)} font-mono text-sm`}>
                       {item.condition}
@@ -459,7 +459,7 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
             <div className="pt-3 border-t border-gray-700 mt-3">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xl">💡</span>
-                <span className="text-sm text-gray-400 font-medium">Survival Tip</span>
+                <span className="text-sm text-gray-300 font-medium">Survival Tip</span>
               </div>
               <p className="text-xs text-gray-300 leading-relaxed italic">
                 {currentTip}
@@ -475,9 +475,9 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
           )}
           {gameState?.discoveredPrinciples && gameState.discoveredPrinciples.size > 0 && (
             <div className="pt-3 border-t border-gray-700 mt-3">
-              <div className="text-sm text-gray-400 mb-1">Knowledge Progress</div>
+              <div className="text-sm text-gray-300 mb-1">Knowledge Progress</div>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">Principles Discovered:</span>
+                <span className="text-xs text-gray-400">Principles Discovered:</span>
                 <span className="text-sm font-mono text-green-400">
                   {gameState.discoveredPrinciples.size} / 90
                 </span>
@@ -499,10 +499,10 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
                       <span className="text-xs text-blue-300 font-medium">Almost Discovered:</span>
                     </div>
                     {nextPrinciples.map((next, idx) => (
-                      <div key={idx} className="pl-5 text-xs text-gray-400 leading-relaxed">
+                      <div key={idx} className="pl-5 text-xs text-gray-300 leading-relaxed">
                         <span className="mr-1">{getCategoryIcon(next.category)}</span>
                         <span className="italic">{next.principle.substring(0, 60)}{next.principle.length > 60 ? '...' : ''}</span>
-                        <div className="text-[10px] text-gray-500 mt-0.5">Unlock: {next.hint}</div>
+                        <div className="text-[10px] text-gray-400 mt-0.5">Unlock: {next.hint}</div>
                       </div>
                     ))}
                   </div>
@@ -515,7 +515,7 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
 
       {showProbability && (
         <div className="pt-2 border-t border-gray-700">
-          <div className="text-sm text-gray-500 mb-1">Estimated Survival Probability</div>
+          <div className="text-sm text-gray-400 mb-1">Estimated Survival Probability</div>
           <div className="text-base font-mono text-gray-300">
             {metrics.survivalProbability.toFixed(0)}%
           </div>
@@ -534,14 +534,14 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
 
             <div className="space-y-2">
               <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-400">Signal Attempts:</span>
+                <span className="text-gray-300">Signal Attempts:</span>
                 <span className="text-gray-300 font-mono">
                   {rescueStatus.successfulSignals} / {rescueStatus.requiredSignals}
                 </span>
               </div>
 
               <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-400">Rescue Probability:</span>
+                <span className="text-gray-300">Rescue Probability:</span>
                 <span className={`font-semibold ${getRescueProbabilityColor(rescueStatus.rescueProbability)}`}>
                   {rescueStatus.rescueProbability.toFixed(0)}% ({getRescueProbabilityDescription(rescueStatus.rescueProbability)})
                 </span>
@@ -549,7 +549,7 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
 
               {rescueStatus.estimatedTurnsToRescue !== null && (
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-gray-400">Est. Time:</span>
+                  <span className="text-gray-300">Est. Time:</span>
                   <span className="text-gray-300 font-mono">
                     {rescueStatus.estimatedTurnsToRescue} turn{rescueStatus.estimatedTurnsToRescue !== 1 ? 's' : ''}
                   </span>
@@ -564,8 +564,8 @@ export function MetricsDisplay({ metrics, equipment, scenario, showProbability =
                   .map((condition, idx) => (
                     <div key={idx} className="text-xs">
                       <div className="flex justify-between mb-1">
-                        <span className="text-gray-400">{condition.description}</span>
-                        <span className="text-gray-500">{condition.progress.toFixed(0)}%</span>
+                        <span className="text-gray-300">{condition.description}</span>
+                        <span className="text-gray-400">{condition.progress.toFixed(0)}%</span>
                       </div>
                       <div className="w-full h-1.5 bg-gray-700 rounded-full overflow-hidden">
                         <div
@@ -624,7 +624,7 @@ function MetricBar({
     <div>
       {/* Container with flash animation */}
       <div className={`relative rounded p-2 -mx-2 transition-colors ${flashState ? `flash-${flashState}` : ''}`}>
-        <div className="flex justify-between text-base text-gray-400 mb-1">
+        <div className="flex justify-between text-base text-gray-300 mb-1">
           <div className="flex items-center gap-2">
             <span>{label}</span>
             {isCriticalStat && (
@@ -831,7 +831,7 @@ function getFireTextColor(value: number): string {
   if (value > 75) return 'text-red-400';    // Strong fire
   if (value > 50) return 'text-red-500';    // Burning
   if (value > 25) return 'text-orange-400'; // Smoldering
-  return 'text-gray-500';                   // Extinguished
+  return 'text-gray-400';                   // Extinguished
 }
 
 function getFireLabel(value: number): string {

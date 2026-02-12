@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useInventory } from '../contexts/InventoryContext';
 import { getAllItems, type GameItem } from '../data/itemDatabase';
-import { Check, Info, MapPin, CloudRain, Thermometer, Clock, Mountain } from 'lucide-react';
+import { Check, Info, MapPin, CloudRain, Thermometer, Clock, Mountain, Package, Target } from 'lucide-react';
 import type { Scenario } from '../types/game';
+import { getRecommendedCategories } from '../engine/knowledgeTracker';
+import type { PrincipleCategory } from '../engine/survivalPrinciplesService';
 
 interface LoadoutScreenProps {
   scenario: Scenario;
@@ -12,18 +14,26 @@ interface LoadoutScreenProps {
 export function LoadoutScreen({ scenario, onComplete }: LoadoutScreenProps) {
   const {
     selectedItems,
-    maxItems,
+    backpackCapacityLiters,
+    currentVolumeUsed,
+    getRemainingCapacity,
+    setBackpackCapacity,
     selectItem,
     deselectItem,
     isSelected,
-    canSelectItem,
-    getSelectedCount
+    canSelectItem
   } = useInventory();
 
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const allItems = getAllItems();
 
-  const selectedCount = getSelectedCount();
+  // Set backpack capacity from scenario on mount
+  useEffect(() => {
+    setBackpackCapacity(scenario.backpackCapacityLiters);
+  }, [scenario.backpackCapacityLiters, setBackpackCapacity]);
+
+  const remainingCapacity = getRemainingCapacity();
+  const capacityPercent = (currentVolumeUsed / backpackCapacityLiters) * 100;
   const canProceed = selectedItems.length > 0; // At least one item
 
   const handleItemClick = (item: GameItem) => {
@@ -40,36 +50,44 @@ export function LoadoutScreen({ scenario, onComplete }: LoadoutScreenProps) {
         {/* Header */}
         <div className="text-center mb-6">
           <h1 className="text-4xl font-bold mb-3 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-            Select Your Survival Kit
+            Pack Your Survival Kit
           </h1>
-          <p className="text-gray-400 text-lg mb-4">
-            Choose {maxItems} items. Force yourself to make hard decisions—that's the training.
+          <p className="text-gray-300 text-lg mb-4">
+            Your backpack holds <span className="font-bold text-blue-400">{backpackCapacityLiters}L</span>. Choose wisely—volume matters.
           </p>
         </div>
 
         {/* Environmental Briefing */}
         <EnvironmentalBriefing scenario={scenario} />
 
-        {/* Kit Selection Indicator */}
+        {/* Backpack Capacity Indicator */}
         <div className="text-center mb-8">
           <div className="inline-block px-8 py-4 bg-gray-800 rounded-lg border border-gray-700">
             <div className="flex items-center gap-6">
+              <Package className="w-8 h-8 text-blue-400" />
               <div>
-                <div className="text-sm text-gray-400 mb-1">Kit Selection</div>
-                <div className="flex items-center gap-2">
-                  <div className="w-32 h-3 bg-gray-700 rounded-full overflow-hidden">
+                <div className="text-sm text-gray-300 mb-1">Backpack Volume</div>
+                <div className="flex items-center gap-3">
+                  <div className="w-48 h-4 bg-gray-700 rounded-full overflow-hidden border border-gray-600">
                     <div
                       className={`h-full transition-all duration-300 ${
-                        selectedCount >= maxItems
-                          ? 'bg-gradient-to-r from-green-500 to-green-600'
+                        capacityPercent >= 95
+                          ? 'bg-gradient-to-r from-red-500 to-red-600'
+                          : capacityPercent >= 75
+                          ? 'bg-gradient-to-r from-yellow-500 to-orange-500'
                           : 'bg-gradient-to-r from-blue-500 to-purple-500'
                       }`}
-                      style={{ width: `${(selectedCount / maxItems) * 100}%` }}
+                      style={{ width: `${Math.min(capacityPercent, 100)}%` }}
                     />
                   </div>
-                  <span className="text-xl font-mono font-bold text-gray-200">
-                    {selectedCount}/{maxItems}
-                  </span>
+                  <div className="text-right min-w-[100px]">
+                    <div className="text-xl font-mono font-bold text-gray-200">
+                      {currentVolumeUsed.toFixed(1)}L / {backpackCapacityLiters}L
+                    </div>
+                    <div className={`text-xs font-medium ${remainingCapacity > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {remainingCapacity > 0 ? `${remainingCapacity.toFixed(1)}L remaining` : 'Pack full!'}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -103,8 +121,7 @@ export function LoadoutScreen({ scenario, onComplete }: LoadoutScreenProps) {
               onClick={() => handleItemClick(item)}
               onHover={(hovered) => setHoveredItem(hovered ? item.id : null)}
               isHovered={hoveredItem === item.id}
-              selectedCount={selectedCount}
-              maxItems={maxItems}
+              remainingCapacity={remainingCapacity}
             />
           ))}
         </div>
@@ -146,7 +163,7 @@ export function LoadoutScreen({ scenario, onComplete }: LoadoutScreenProps) {
               px-12 py-4 rounded-lg font-bold text-lg transition-all duration-300
               ${canProceed
                 ? 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 text-white shadow-lg hover:shadow-green-500/50'
-                : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                : 'bg-gray-700 text-gray-300 cursor-not-allowed'
               }
             `}
           >
@@ -154,7 +171,7 @@ export function LoadoutScreen({ scenario, onComplete }: LoadoutScreenProps) {
           </button>
 
           {canProceed && (
-            <p className="mt-3 text-sm text-gray-400 italic">
+            <p className="mt-3 text-sm text-gray-300 italic">
               Remember: You can't change your loadout once the scenario begins
             </p>
           )}
@@ -254,8 +271,8 @@ function EnvironmentalBriefing({ scenario }: { scenario: Scenario }) {
         {/* Environment */}
         <div className="p-4 bg-gray-900/60 border border-gray-700 rounded-lg">
           <div className="flex items-center gap-2 mb-2">
-            <Mountain className="w-4 h-4 text-gray-400" />
-            <span className="text-xs text-gray-400 uppercase tracking-wide">Environment</span>
+            <Mountain className="w-4 h-4 text-gray-300" />
+            <span className="text-xs text-gray-300 uppercase tracking-wide">Environment</span>
           </div>
           <div className="text-3xl mb-1">{env.icon}</div>
           <div className="text-lg font-semibold text-gray-100">{env.name}</div>
@@ -264,24 +281,24 @@ function EnvironmentalBriefing({ scenario }: { scenario: Scenario }) {
         {/* Weather */}
         <div className="p-4 bg-gray-900/60 border border-gray-700 rounded-lg">
           <div className="flex items-center gap-2 mb-2">
-            <CloudRain className="w-4 h-4 text-gray-400" />
-            <span className="text-xs text-gray-400 uppercase tracking-wide">Weather</span>
+            <CloudRain className="w-4 h-4 text-gray-300" />
+            <span className="text-xs text-gray-300 uppercase tracking-wide">Weather</span>
           </div>
           <div className="text-3xl mb-1">{weather.icon}</div>
           <div className="text-lg font-semibold text-gray-100">{weather.name}</div>
-          <div className="text-xs text-gray-400 mt-1">{weather.impact}</div>
+          <div className="text-xs text-gray-300 mt-1">{weather.impact}</div>
         </div>
 
         {/* Temperature */}
         <div className="p-4 bg-gray-900/60 border border-gray-700 rounded-lg">
           <div className="flex items-center gap-2 mb-2">
-            <Thermometer className="w-4 h-4 text-gray-400" />
-            <span className="text-xs text-gray-400 uppercase tracking-wide">Temperature</span>
+            <Thermometer className="w-4 h-4 text-gray-300" />
+            <span className="text-xs text-gray-300 uppercase tracking-wide">Temperature</span>
           </div>
           <div className={`text-4xl font-bold ${getTempColor(scenario.temperature)} mb-1`}>
             {scenario.temperature}°C
           </div>
-          <div className="text-xs text-gray-400">
+          <div className="text-xs text-gray-300">
             Wind: {scenario.windSpeed} km/h
           </div>
         </div>
@@ -289,12 +306,12 @@ function EnvironmentalBriefing({ scenario }: { scenario: Scenario }) {
         {/* Time of Day */}
         <div className="p-4 bg-gray-900/60 border border-gray-700 rounded-lg">
           <div className="flex items-center gap-2 mb-2">
-            <Clock className="w-4 h-4 text-gray-400" />
-            <span className="text-xs text-gray-400 uppercase tracking-wide">Time</span>
+            <Clock className="w-4 h-4 text-gray-300" />
+            <span className="text-xs text-gray-300 uppercase tracking-wide">Time</span>
           </div>
           <div className="text-3xl mb-1">{time.icon}</div>
           <div className="text-lg font-semibold text-gray-100">{time.name}</div>
-          <div className="text-xs text-gray-400 mt-1">{time.detail}</div>
+          <div className="text-xs text-gray-300 mt-1">{time.detail}</div>
         </div>
       </div>
 
@@ -305,6 +322,80 @@ function EnvironmentalBriefing({ scenario }: { scenario: Scenario }) {
           <div>
             <h3 className="text-amber-400 font-semibold mb-1">Key Considerations for {env.name}</h3>
             <p className="text-sm text-gray-300">{env.considerations}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Learning Focus Indicator - Only shown if scenario targets weak areas */}
+      <LearningFocusIndicator environment={scenario.environment} />
+    </div>
+  );
+}
+
+function LearningFocusIndicator({ environment }: { environment: string }) {
+  const weakCategories = getRecommendedCategories();
+
+  // Don't show if no weak areas identified yet
+  if (weakCategories.length === 0) return null;
+
+  // Map environment to categories it tests
+  const categoryToEnvironments: Record<PrincipleCategory, string[]> = {
+    shelter: ['mountains', 'tundra', 'forest'],
+    water: ['desert', 'coast', 'tundra'],
+    fire: ['tundra', 'mountains', 'forest'],
+    food: ['forest', 'coast', 'desert'],
+    navigation: ['desert', 'forest', 'tundra'],
+    signaling: ['coast', 'mountains', 'urban-edge'],
+    firstAid: ['mountains', 'urban-edge', 'forest'],
+    priorities: ['desert', 'tundra', 'mountains'],
+    psychology: ['tundra', 'desert', 'urban-edge'],
+    weather: ['mountains', 'coast', 'tundra']
+  };
+
+  // Find which weak categories this environment tests
+  const targetedCategories = weakCategories.filter(category =>
+    categoryToEnvironments[category]?.includes(environment)
+  );
+
+  if (targetedCategories.length === 0) return null;
+
+  const categoryDisplay: Record<PrincipleCategory, { name: string; emoji: string }> = {
+    shelter: { name: 'Shelter Building', emoji: '⛺' },
+    water: { name: 'Water Procurement', emoji: '💧' },
+    fire: { name: 'Fire Craft', emoji: '🔥' },
+    food: { name: 'Food & Foraging', emoji: '🍖' },
+    navigation: { name: 'Navigation', emoji: '🧭' },
+    signaling: { name: 'Rescue Signaling', emoji: '🚨' },
+    firstAid: { name: 'First Aid', emoji: '⚕️' },
+    priorities: { name: 'Survival Priorities', emoji: '⭐' },
+    psychology: { name: 'Mental Resilience', emoji: '🧠' },
+    weather: { name: 'Weather Management', emoji: '⛅' }
+  };
+
+  return (
+    <div className="mt-4 p-4 bg-gradient-to-br from-purple-900/30 to-indigo-900/30 border-2 border-purple-600/50 rounded-lg">
+      <div className="flex items-start gap-3">
+        <Target className="w-5 h-5 text-purple-400 flex-shrink-0 mt-0.5" />
+        <div>
+          <h3 className="text-purple-300 font-semibold mb-2 flex items-center gap-2">
+            Learning Focus
+          </h3>
+          <p className="text-sm text-gray-300 mb-3">
+            This scenario will help you practice:
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {targetedCategories.map(category => {
+              const display = categoryDisplay[category];
+              return (
+                <div
+                  key={category}
+                  className="px-3 py-1.5 bg-purple-900/40 border border-purple-700/60 rounded-full text-sm text-purple-200 flex items-center gap-2"
+                >
+                  <span>{display.emoji}</span>
+                  <span>{display.name}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -319,12 +410,12 @@ interface ItemCardProps {
   onClick: () => void;
   onHover: (hovered: boolean) => void;
   isHovered: boolean;
-  selectedCount: number;
-  maxItems: number;
+  remainingCapacity: number;
 }
 
-function ItemCard({ item, isSelected, canSelect, onClick, onHover, isHovered, selectedCount, maxItems }: ItemCardProps) {
+function ItemCard({ item, isSelected, canSelect, onClick, onHover, isHovered, remainingCapacity }: ItemCardProps) {
   const canClick = isSelected || canSelect;
+  const tooLarge = !isSelected && item.volumeLiters > remainingCapacity;
 
   return (
     <div
@@ -352,7 +443,7 @@ function ItemCard({ item, isSelected, canSelect, onClick, onHover, isHovered, se
       {/* Cannot Select Indicator - Clearer messaging */}
       {!canSelect && !isSelected && (
         <div className="absolute top-2 right-2 px-2 py-1 bg-red-900/90 border border-red-600 rounded text-[10px] font-bold text-red-200 shadow-lg">
-          🔒 Kit Full ({selectedCount}/{maxItems})
+          {tooLarge ? `⚠️ Too large (${item.volumeLiters}L > ${remainingCapacity.toFixed(1)}L)` : '🔒 No space'}
         </div>
       )}
 
@@ -369,21 +460,24 @@ function ItemCard({ item, isSelected, canSelect, onClick, onHover, isHovered, se
         )}
       </div>
 
-      {/* Category Badge */}
-      <div className="mb-3">
+      {/* Volume and Category */}
+      <div className="mb-3 flex items-center justify-between gap-2">
         <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getCategoryStyle(item.category)}`}>
           {getCategoryLabel(item.category)}
+        </span>
+        <span className="inline-block px-3 py-1 bg-gray-700 text-gray-300 rounded-full text-xs font-bold">
+          📦 {item.volumeLiters}L
         </span>
       </div>
 
       {/* Description */}
-      <p className="text-sm text-gray-400 mb-3 line-clamp-2">
+      <p className="text-sm text-gray-300 mb-3 line-clamp-2">
         {item.description}
       </p>
 
       {/* Strategic Value */}
       <div className="pt-3 border-t border-gray-700">
-        <p className="text-xs text-gray-500 italic leading-relaxed">
+        <p className="text-xs text-gray-300 italic leading-relaxed">
           {item.strategicValue}
         </p>
       </div>

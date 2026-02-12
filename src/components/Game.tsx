@@ -17,16 +17,17 @@ import { DecisionList } from './DecisionList';
 import { GameOutcome } from './GameOutcome';
 import { DynamicEnvironmentBackground } from './DynamicEnvironmentBackground';
 import { DecisionIllustration } from './DecisionIllustration';
-import { Notification } from './Notification';
 import { ConsequenceExplanationPanel } from './ConsequenceExplanationPanel';
 import { ObjectiveDisplay } from './ObjectiveDisplay';
-import { PrincipleUnlockModal } from './PrincipleUnlockModal';
 import { ScenarioHeroImage } from './ScenarioHeroImage';
 import InformationDashboard from './InformationDashboard';
 import { CriticalStatsAlert } from './CriticalStatsAlert';
 import FailureExplanationModal from './FailureExplanationModal';
+import { SurvivalDebriefCard } from './SurvivalDebriefCard';
 import type { PrincipleCategory } from '../engine/survivalPrinciplesService';
-import { CloudSnow } from 'lucide-react';
+import { startSession, endSession, getCurrentSessionPrinciples } from '../engine/knowledgeTracker';
+import { IconLegendModal } from './IconLegendModal';
+import { CloudSnow, HelpCircle } from 'lucide-react';
 
 export function Game() {
   const { resetConsumption, selectedItems } = useInventory();
@@ -40,19 +41,16 @@ export function Game() {
   const [lastDecisionId, setLastDecisionId] = useState<string>('');
   const [currentTutorialScenario, setCurrentTutorialScenario] = useState<TutorialScenario | null>(null);
   const [completedTutorials, setCompletedTutorials] = useState<Set<string>>(new Set());
-  const [notification, setNotification] = useState<{
-    message: string;
-    type: 'success' | 'warning' | 'info' | 'danger';
-  } | null>(null);
-  const [principleUnlock, setPrincipleUnlock] = useState<{
-    principle: string;
-    category: PrincipleCategory;
-  } | null>(null);
   const [showMobileStatus, setShowMobileStatus] = useState(false);
   const [showPulse, setShowPulse] = useState(false);
   const [touchStartY, setTouchStartY] = useState<number>(0);
   const [touchStartTime, setTouchStartTime] = useState<number>(0);
   const [showFailureExplanation, setShowFailureExplanation] = useState(false);
+  const [currentDebrief, setCurrentDebrief] = useState<{
+    principle: string;
+    category: PrincipleCategory;
+  } | null>(null);
+  const [showIconLegend, setShowIconLegend] = useState(false);
 
   // Generate scenario on component mount (before loadout selection)
   useEffect(() => {
@@ -125,12 +123,17 @@ export function Game() {
         return {
           name: item.name,
           quantity: 1,
-          condition: 'good' as const
+          condition: 'good' as const,
+          volumeLiters: item.volumeLiters
         };
       });
 
       createNewGame(scenario, equipment)
-        .then(setGameState)
+        .then(newState => {
+          setGameState(newState);
+          // Start knowledge tracking session
+          startSession(newState.id, newState.scenario.environment);
+        })
         .catch((error) => {
           console.error('Failed to create game:', error);
           setGameLoadError('Failed to initialize game. Please try again.');
@@ -159,9 +162,8 @@ export function Game() {
 
     setRecentOutcome('');
     setLastDecisionId('');
-    setNotification(null);
+    setCurrentDebrief(null); // Clear previous debrief
 
-    const previousPrincipleCount = gameState.discoveredPrinciples?.size || 0;
     const newState = makeDecision(gameState, decision);
     const lastOutcome = newState.history[newState.history.length - 1];
 
@@ -169,16 +171,14 @@ export function Game() {
     setRecentOutcome(lastOutcome.immediateEffect);
     setGameState(newState);
 
-    // Check for newly discovered principles
-    const newPrincipleCount = newState.discoveredPrinciples?.size || 0;
-    if (newPrincipleCount > previousPrincipleCount && lastOutcome.survivalPrincipleAlignment) {
-      // Find the newly discovered principle
-      const newPrinciples = Array.from(newState.discoveredPrinciples || []).filter(
-        p => !gameState.discoveredPrinciples?.has(p)
-      );
+    // Show survival debrief if lesson learned exists AND not already shown this session
+    if (lastOutcome.explanation?.lessonLearned) {
+      const principle = lastOutcome.explanation.lessonLearned;
+      const sessionPrinciples = getCurrentSessionPrinciples();
 
-      if (newPrinciples.length > 0) {
-        // Determine category based on decision type
+      // Only show if this exact principle hasn't been shown this session
+      if (!sessionPrinciples.includes(principle)) {
+        // Determine category from decision ID
         const categoryMap: Record<string, PrincipleCategory> = {
           'shelter': 'shelter',
           'improve': 'shelter',
@@ -189,7 +189,14 @@ export function Game() {
           'treat': 'firstAid',
           'rest': 'psychology',
           'scout': 'priorities',
-          'forage': 'food'
+          'forage': 'food',
+          'purify': 'water',
+          'hunt': 'food',
+          'fish': 'food',
+          'blanket': 'shelter',
+          'whistle': 'signaling',
+          'mirror': 'signaling',
+          'flashlight': 'signaling'
         };
 
         let category: PrincipleCategory = 'priorities';
@@ -200,28 +207,28 @@ export function Game() {
           }
         }
 
-        // Show principle unlock modal after a short delay
+        // Show debrief quickly (reduced from 800ms for better flow)
         setTimeout(() => {
-          setPrincipleUnlock({
-            principle: newPrinciples[0],
+          setCurrentDebrief({
+            principle,
             category
           });
-        }, 1500);
+        }, 400);
       }
     }
 
-    const notificationType =
-      lastOutcome.decisionQuality === 'excellent' ? 'success' :
-      lastOutcome.decisionQuality === 'poor' || lastOutcome.decisionQuality === 'critical-error' ? 'danger' :
-      decision.riskLevel >= 7 ? 'warning' :
-      'info';
+    // Principle unlock modal removed - was causing UX friction
+    // Principles now only shown via debrief card
 
-    setNotification({
-      message: lastOutcome.immediateEffect,
-      type: notificationType
-    });
+    // Notification removed - redundant with consequence panel immediate effect
+    // Reduces visual noise and modal fatigue
 
     if (newState.status === 'ended') {
+      // End knowledge tracking session
+      if (newState.outcome) {
+        endSession(newState.outcome);
+      }
+
       // If player died and we have causality chain, show failure explanation first
       if (newState.outcome === 'died' && newState.causalityChain) {
         setTimeout(() => setShowFailureExplanation(true), 1000);
@@ -236,7 +243,6 @@ export function Game() {
     setShowOutcome(false);
     setShowFailureExplanation(false);
     setLastDecisionId('');
-    setNotification(null);
     setGameState(null);
     setGameLoadError(null);
     // Don't reset loadoutComplete - keep the same equipment for next game
@@ -300,17 +306,6 @@ export function Game() {
     setGameState(updatedState);
     setCompletedTutorials(prev => new Set([...prev, currentTutorialScenario.id]));
     setCurrentTutorialScenario(null);
-
-    // Show notification based on quality
-    const notificationType =
-      choice.outcome.quality === 'excellent' ? 'success' :
-      choice.outcome.quality === 'poor' || choice.outcome.quality === 'critical-error' ? 'danger' :
-      'info';
-
-    setNotification({
-      message: choice.outcome.principle,
-      type: notificationType
-    });
   };
 
   const handleDismissTutorial = () => {
@@ -429,10 +424,20 @@ export function Game() {
       {/* Inventory Tray - Shows equipped items */}
       <InventoryTray />
 
+      {/* Icon Legend Help Button - Always visible */}
+      <button
+        onClick={() => setShowIconLegend(true)}
+        className="fixed top-4 right-4 lg:top-auto lg:bottom-4 lg:right-4 z-40 bg-blue-600/90 hover:bg-blue-700 backdrop-blur-md border-2 border-blue-500 rounded-full shadow-2xl p-3 active:scale-95 transition-all hover:scale-110"
+        aria-label="Show icon legend"
+        title="Icon Legend - Learn what all icons mean"
+      >
+        <HelpCircle className="w-6 h-6 text-white" />
+      </button>
+
       {/* Mobile Status Button */}
       <button
         onClick={handleStatusButtonClick}
-        className={`lg:hidden fixed top-4 right-4 z-40 bg-gray-900/95 backdrop-blur-md border-2 border-gray-700 rounded-xl shadow-2xl p-3 active:scale-95 transition-transform ${showPulse ? 'animate-pulse' : ''}`}
+        className={`lg:hidden fixed top-4 right-16 z-40 bg-gray-900/95 backdrop-blur-md border-2 border-gray-700 rounded-xl shadow-2xl p-3 active:scale-95 transition-transform ${showPulse ? 'animate-pulse' : ''}`}
         aria-label="View status"
       >
         <div className="flex items-center gap-2">
@@ -494,20 +499,17 @@ export function Game() {
         />
       )}
 
-      {/* Principle Unlock Modal */}
-      {principleUnlock && (
-        <PrincipleUnlockModal
-          principle={principleUnlock.principle}
-          category={principleUnlock.category}
-          onClose={() => setPrincipleUnlock(null)}
-        />
-      )}
+      {/* Principle Unlock Modal - REMOVED for UX improvement
+          Redundant with debrief card, was causing modal fatigue */}
 
-      {notification && (
-        <Notification
-          message={notification.message}
-          type={notification.type}
-          onDismiss={() => setNotification(null)}
+      {/* Notification removed to reduce modal cascade */}
+
+      {/* Survival Debrief Card - Shows after decision */}
+      {currentDebrief && (
+        <SurvivalDebriefCard
+          principle={currentDebrief.principle}
+          category={currentDebrief.category}
+          onDismiss={() => setCurrentDebrief(null)}
         />
       )}
 
@@ -544,23 +546,23 @@ export function Game() {
                       </div>
                     </div>
                   </div>
-                  <div className="mt-4 md:mt-6 p-3 md:p-4 bg-gradient-to-br from-blue-900/20 to-blue-800/10 border border-blue-700/40 rounded-lg">
+                  <div className="mt-4 md:mt-6 p-3 md:p-4 bg-blue-950/50 border border-blue-700/40 rounded-lg">
                     <div className="flex items-center gap-2 mb-2 md:mb-3">
                       <span className="text-xl md:text-2xl">🎯</span>
-                      <h4 className="text-sm md:text-base font-semibold text-blue-300">Survival Priorities</h4>
+                      <h4 className="text-sm md:text-base font-semibold text-white">Survival Priorities</h4>
                     </div>
                     <div className="space-y-1.5 md:space-y-2">
                       {getEnvironmentTips(gameState.scenario.environment).slice(0, 3).map((tip, i) => (
                         <div key={i} className="flex items-start gap-2 md:gap-3">
-                          <span className="text-blue-400 text-xs md:text-sm font-mono mt-0.5 flex-shrink-0">
+                          <span className="text-blue-300 text-xs md:text-sm font-mono mt-0.5 flex-shrink-0">
                             {i + 1}.
                           </span>
-                          <span className="text-xs md:text-sm text-gray-300 leading-relaxed">{tip}</span>
+                          <span className="text-xs md:text-sm text-white leading-relaxed">{tip}</span>
                         </div>
                       ))}
                     </div>
-                    <div className="mt-2 md:mt-3 pt-2 md:pt-3 border-t border-blue-800/30">
-                      <p className="text-[10px] md:text-xs text-gray-400 italic">
+                    <div className="mt-2 md:mt-3 pt-2 md:pt-3 border-t border-blue-700/30">
+                      <p className="text-[10px] md:text-xs text-gray-300 italic">
                         These principles are based on the SAS Survival Handbook
                       </p>
                     </div>
@@ -637,6 +639,12 @@ export function Game() {
           </div>
         </div>
       </div>
+
+      {/* Icon Legend Modal */}
+      <IconLegendModal
+        isOpen={showIconLegend}
+        onClose={() => setShowIconLegend(false)}
+      />
     </div>
   );
 }

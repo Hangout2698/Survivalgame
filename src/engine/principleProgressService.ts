@@ -82,7 +82,7 @@ export function getNextPrinciples(state: GameState, count: number = 3): NextPrin
 
   // Find undiscovered principles from categories with some activity but not mastered
   const categories = Object.entries(mastery)
-    .filter(([_, score]) => score > 10 && score < 80) // Active but not mastered
+    .filter(([, score]) => score > 10 && score < 80) // Active but not mastered
     .sort((a, b) => b[1] - a[1]) // Highest mastery first
     .slice(0, 5); // Top 5 categories
 
@@ -103,7 +103,7 @@ export function getNextPrinciples(state: GameState, count: number = 3): NextPrin
 
   // Also add some from weakest categories to encourage exploration
   const weakCategories = Object.entries(mastery)
-    .filter(([_, score]) => score < 30)
+    .filter(([, score]) => score < 30)
     .sort((a, b) => a[1] - b[1]) // Lowest first
     .slice(0, 2);
 

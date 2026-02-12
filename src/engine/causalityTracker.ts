@@ -334,7 +334,7 @@ export function buildCausalityChain(state: GameState, fatalCrossing: MetricThres
  * Generate suggestions for what player should have done instead
  */
 export function generateAlternativePath(
-  state: GameState,
+  _state: GameState,
   rootCause: CausalityChain['rootCauseDecision'],
   fatalCrossing: MetricThresholdCrossing
 ): string {

@@ -9,7 +9,7 @@ export function initializeMetrics(scenario: Scenario): PlayerMetrics {
   let injurySeverity = 0;
   let morale = 70;
   let shelter = 0;
-  let fireQuality = 0;
+  const fireQuality = 0;
 
   if (scenario.initialCondition.includes('vehicle') || scenario.initialCondition.includes('car')) {
     shelter = 100;

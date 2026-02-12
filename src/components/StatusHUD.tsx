@@ -37,7 +37,7 @@ export function StatusHUD({ stats, onGameOver }: StatusHUDProps) {
     }
 
     // Show warning for low stats
-    const lowStats = Object.entries(stats).filter(([_, value]) => value > 0 && value < 20);
+    const lowStats = Object.entries(stats).filter(([, value]) => value > 0 && value < 20);
     if (lowStats.length > 0) {
       setShowWarning(true);
       setCriticalStat(lowStats[0][0]);

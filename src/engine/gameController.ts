@@ -67,7 +67,7 @@ function calculateTimeUntilDuskOrDawn(currentTime: TimeOfDay): string {
       return `Perhaps ${Math.floor(hoursUntilNight)} hours until darkness`;
     }
   } else {
-    let hoursUntilDawn = hoursPerPeriod['night'];
+    const hoursUntilDawn = hoursPerPeriod['night'];
     if (hoursUntilDawn <= 2) {
       return 'Dawn is approaching within the next two hours';
     } else if (hoursUntilDawn <= 4) {
@@ -86,11 +86,18 @@ export async function createNewGame(
   const metrics = initializeMetrics(scenario);
   const survivalGuide = await loadActiveSurvivalGuide();
 
+  const equipment = providedEquipment || [...scenario.equipment];
+
+  // Calculate current volume used
+  const currentVolumeUsed = equipment.reduce((total, item) => total + item.volumeLiters, 0);
+
   return {
     id: crypto.randomUUID(),
     scenario,
     metrics,
-    equipment: providedEquipment || [...scenario.equipment],
+    equipment,
+    backpackCapacityLiters: scenario.backpackCapacityLiters,
+    currentVolumeUsed,
     turnNumber: 1,
     currentTimeOfDay: scenario.timeOfDay,
     hoursElapsed: 0,
@@ -115,7 +122,7 @@ export function makeDecision(state: GameState, decision: Decision): GameState {
   // Apply any delayed effects that should trigger this turn
   // OPTIMIZATION: Only check recent history (last 5 turns max) since delayed effects are short-term
   // This prevents performance degradation as game history grows to 15-20 turns
-  let delayedMetricsChange: Partial<PlayerMetrics> = {};
+  const delayedMetricsChange: Partial<PlayerMetrics> = {};
   const recentHistoryStart = Math.max(0, state.history.length - 5);
   const recentHistory = state.history.slice(recentHistoryStart);
 
@@ -160,7 +167,7 @@ export function makeDecision(state: GameState, decision: Decision): GameState {
   );
 
   // Store threshold crossings for causality tracking
-  let updatedCrossings = [...(state.metricThresholdCrossings || [])];
+  const updatedCrossings = [...(state.metricThresholdCrossings || [])];
   if (thresholdCrossing) {
     updatedCrossings.push(thresholdCrossing);
   }
@@ -169,8 +176,8 @@ export function makeDecision(state: GameState, decision: Decision): GameState {
 
   let updatedSignalAttempts = state.signalAttempts || 0;
   let updatedSuccessfulSignals = state.successfulSignals || 0;
-  let updatedGoodDecisions = [...(state.goodDecisions || [])];
-  let updatedPoorDecisions = [...(state.poorDecisions || [])];
+  const updatedGoodDecisions = [...(state.goodDecisions || [])];
+  const updatedPoorDecisions = [...(state.poorDecisions || [])];
 
   if (outcome.wasSignalAttempt) {
     updatedSignalAttempts += 1;
@@ -251,10 +258,14 @@ export function makeDecision(state: GameState, decision: Decision): GameState {
     }
   }
 
+  // Recalculate current volume used after equipment changes
+  const updatedVolumeUsed = updatedEquipment.reduce((total, item) => total + item.volumeLiters, 0);
+
   const newState: GameState = {
     ...state,
     metrics: updatedMetrics,
     equipment: updatedEquipment,
+    currentVolumeUsed: updatedVolumeUsed,
     turnNumber: state.turnNumber + 1,
     currentTimeOfDay: timeProgression.newTime,
     hoursElapsed: state.hoursElapsed + timeProgression.totalHours,

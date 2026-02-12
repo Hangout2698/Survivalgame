@@ -1,4 +1,4 @@
-import type { Decision, GameState, DecisionOutcome } from '../types/game';
+import type { Decision, GameState, DecisionOutcome, Environment, Equipment, PlayerMetrics } from '../types/game';
 import { applyEnvironmentalEffects } from './metricsSystem';
 import { extractRelevantGuidance, generateGuidanceBasedFeedback } from './survivalGuideService';
 import {
@@ -47,8 +47,7 @@ function scaleEnergyCost(baseCost: number, riskLevel: number, state: GameState):
 // Helper function to determine decision quality based on game state
 function determineQuality(
   decision: Decision,
-  state: GameState,
-  _outcome: DecisionOutcome
+  state: GameState
 ): 'excellent' | 'good' | 'poor' | 'critical-error' {
   const { metrics, scenario, turnNumber } = state;
 
@@ -95,12 +94,12 @@ function getPrincipleFromContext(
   return 'Responding appropriately to the situation is key to survival.';
 }
 
-function evaluateDecisionQuality(decision: Decision, state: GameState, outcome: DecisionOutcome): {
+function evaluateDecisionQuality(decision: Decision, state: GameState): {
   quality: 'excellent' | 'good' | 'poor' | 'critical-error';
   principle: string;
 } {
   // Determine quality based on game state
-  const quality = determineQuality(decision, state, outcome);
+  const quality = determineQuality(decision, state);
 
   // Get principle from database
   const principle = getEducationalFeedback(decision.id, quality)
@@ -821,6 +820,38 @@ function getPrincipleBasedDecisions(state: GameState): Decision[] {
   return decisions;
 }
 
+// Generate drop item decisions (free action to recover backpack space)
+function getDropItemDecisions(state: GameState): Decision[] {
+  const decisions: Decision[] = [];
+  const { equipment, currentVolumeUsed, backpackCapacityLiters } = state;
+
+  // Only offer drop decisions if pack is >80% full or player has 3+ items
+  const capacityPercent = (currentVolumeUsed / backpackCapacityLiters) * 100;
+  if (capacityPercent < 80 && equipment.length < 3) {
+    return decisions;
+  }
+
+  // Create drop decisions for each non-critical item
+  equipment.forEach((item) => {
+    // Don't allow dropping water containers or medical supplies if they're critical
+    const isCriticalWater = item.name.toLowerCase().includes('water') && state.metrics.hydration < 40;
+    const isCriticalMedical = item.name.toLowerCase().includes('aid') && state.metrics.injurySeverity > 60;
+
+    if (!isCriticalWater && !isCriticalMedical) {
+      decisions.push({
+        id: `drop-${item.name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`,
+        text: `Drop: ${item.name} (Free - Recovers ${item.volumeLiters}L)`,
+        energyCost: 0, // Free action
+        riskLevel: 1,
+        timeRequired: 0, // Instant
+        environmentalHint: `Dropping this item will free up ${item.volumeLiters}L of backpack space`
+      });
+    }
+  });
+
+  return decisions;
+}
+
 export function generateDecisions(state: GameState): Decision[] {
   const { scenario, metrics, turnNumber } = state;
   const decisions: Decision[] = [];
@@ -831,6 +862,9 @@ export function generateDecisions(state: GameState): Decision[] {
 
   const equipmentDecisions = getEquipmentBasedDecisions(state);
   decisions.push(...equipmentDecisions);
+
+  const dropItemDecisions = getDropItemDecisions(state);
+  decisions.push(...dropItemDecisions);
 
   const fireDecisions = getFireManagementDecisions(state);
   decisions.push(...fireDecisions);
@@ -880,8 +914,9 @@ export function generateDecisions(state: GameState): Decision[] {
     environmentalHint: restHints[state.currentEnvironment]
   };
 
-  // If energy is critical, prioritize rest decision
-  if (metrics.energy < 20) {
+  // ALWAYS prioritize rest - it should never be cut from the 6-decision limit
+  // Rest is the most fundamental survival action
+  if (metrics.energy < 50) {
     criticalDecisions.push(restDecision);
   } else {
     decisions.push(restDecision);
@@ -1147,16 +1182,18 @@ export function generateDecisions(state: GameState): Decision[] {
     return true;
   });
 
-  return uniqueDecisions.slice(0, 6);
+  // Increased from 6 to 8 to provide more options
+  // Rest and critical recovery are prioritized first
+  return uniqueDecisions.slice(0, 8);
 }
 
 export function applyDecision(decision: Decision, state: GameState): DecisionOutcome {
   const consequences: string[] = [];
-  let metricsChange: any = {};
-  let equipmentChanges: any = {};
+  let metricsChange: Partial<PlayerMetrics> = {};
+  const equipmentChanges: { added?: Equipment[]; removed?: string[]; updated?: Equipment[] } = {};
   let immediateEffect = '';
-  const delayedEffects: any[] = [];
-  let environmentChange: any = undefined;
+  const delayedEffects: Array<{ turn: number; effect: string; metricsChange: Partial<PlayerMetrics> }> = [];
+  let environmentChange: Environment | undefined = undefined;
 
   // Apply success bonus based on principle alignment
   const successBonus = calculateSuccessBonus(state);
@@ -1190,27 +1227,48 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
   }
 
   const guidance = state.survivalGuide
-    ? extractRelevantGuidance(state.survivalGuide, state, 'outcome')
+    ? extractRelevantGuidance(state.survivalGuide, state)
     : '';
 
   const guidanceFeedback = state.survivalGuide
     ? generateGuidanceBasedFeedback(guidance, decision.id)
     : [];
 
-  switch (decision.id) {
-    case 'shelter':
-      const shelterIncrease = state.metrics.shelter < 70 ? 25 : 15;
+  // Handle drop-item decisions first (free action, instant)
+  if (decision.id.startsWith('drop-')) {
+    const itemNameFromId = decision.id.replace('drop-', '').replace(/-/g, ' ');
+    const itemToDrop = state.equipment.find(eq =>
+      eq.name.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-') === itemNameFromId.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-')
+    );
+
+    if (itemToDrop) {
+      equipmentChanges.removed = [itemToDrop.name];
+      immediateEffect = `You drop the ${itemToDrop.name} to free up backpack space.`;
+      consequences.push(`Freed ${itemToDrop.volumeLiters}L of backpack capacity.`);
       metricsChange = {
-        energy: -actualEnergyCost,
-        bodyTemperature: state.scenario.temperature < 15 ? 0.3 : 0.1,
-        morale: 5,
-        shelter: shelterIncrease,
-        cumulativeRisk: -2
+        morale: -2 // Slight morale loss for abandoning gear
       };
-      immediateEffect = 'You gather materials and improve your shelter.';
-      consequences.push('Your protection from the elements increases.');
-      consequences.push('You feel slightly more in control.');
-      break;
+    } else {
+      immediateEffect = 'The item is no longer in your inventory.';
+    }
+  } else {
+    // Handle all other decisions
+    switch (decision.id) {
+      case 'shelter':
+      {
+        const shelterIncrease = state.metrics.shelter < 70 ? 25 : 15;
+        metricsChange = {
+          energy: -actualEnergyCost,
+          bodyTemperature: state.scenario.temperature < 15 ? 0.3 : 0.1,
+          morale: 5,
+          shelter: shelterIncrease,
+          cumulativeRisk: -2
+        };
+        immediateEffect = 'You gather materials and improve your shelter.';
+        consequences.push('Your protection from the elements increases.');
+        consequences.push('You feel slightly more in control.');
+        break;
+      }
 
     case 'signal':
       metricsChange = {
@@ -1251,7 +1309,7 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       }
       break;
 
-    case 'descend':
+    case 'descend': {
       // Principle: "Travel during daylight hours to avoid injury and conserve energy"
       const isNightDescend = state.scenario.timeOfDay === 'night' || state.scenario.timeOfDay === 'dusk';
       const nightPenalty = isNightDescend ? 1.5 : 1.0; // 50% more danger at night
@@ -1296,6 +1354,7 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
         }
       }
       break;
+    }
 
     case 'find-landmark':
       metricsChange = {
@@ -1492,7 +1551,7 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
         immediateEffect = 'You follow terrain down and find a stream.';
         consequences.push('Fresh water and a landmark.');
         metricsChange.morale = 12;
-        equipmentChanges.added = [{ name: 'Water bottle (full)', quantity: 1, condition: 'good' as const }];
+        equipmentChanges.added = [{ name: 'Water bottle (full)', quantity: 1, condition: 'good' as const, volumeLiters: 1.0 }];
       } else {
         immediateEffect = 'You descend but find no water.';
         consequences.push('The terrain is difficult.');
@@ -1643,17 +1702,17 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
         immediateEffect = 'You find a stream with fresh water!';
         consequences.push('You can refill your water supply.');
         metricsChange.morale = 10;
-        equipmentChanges.added = [{ name: 'Water bottle (full)', quantity: 1, condition: 'good' as const }];
+        equipmentChanges.added = [{ name: 'Water bottle (full)', quantity: 1, condition: 'good' as const, volumeLiters: 1.0 }];
       } else if (roll > 0.6) {
         immediateEffect = 'You find some dry firewood and tinder.';
         consequences.push('This could help with warmth.');
         metricsChange.morale = 6;
-        equipmentChanges.added = [{ name: 'Firewood bundle', quantity: 1, condition: 'good' as const }];
+        equipmentChanges.added = [{ name: 'Firewood bundle', quantity: 1, condition: 'good' as const, volumeLiters: 2.0 }];
       } else if (roll > 0.4) {
         immediateEffect = 'You find some edible berries.';
         consequences.push('A small food source helps morale.');
         metricsChange.morale = 4;
-        equipmentChanges.added = [{ name: 'Berries (handful)', quantity: 1, condition: 'good' as const }];
+        equipmentChanges.added = [{ name: 'Berries (handful)', quantity: 1, condition: 'good' as const, volumeLiters: 0.2 }];
       } else if (roll > 0.2) {
         immediateEffect = 'You scout the area but find little of value.';
         consequences.push('At least you know what is nearby.');
@@ -1667,47 +1726,51 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       break;
 
     case 'rest':
-      const shelterBonus = Math.floor(state.metrics.shelter / 20);
-      const baseEnergyGain = -decision.energyCost;
-      const totalEnergyGain = baseEnergyGain + shelterBonus;
-
-      metricsChange = {
-        energy: totalEnergyGain,
-        morale: 5
-      };
-
-      // Passive injury healing when resting in good shelter
-      if (state.metrics.shelter > 60 && state.metrics.injurySeverity > 0) {
-        metricsChange.injurySeverity = -5; // Heal 5 injury per rest
-        immediateEffect = 'You rest in your shelter. Your energy recovers and injuries heal.';
-        consequences.push('Good shelter allows for effective rest and recovery.');
-      } else if (state.metrics.shelter > 50) {
-        immediateEffect = 'You rest in your shelter. Your energy recovers well.';
-        consequences.push('Good shelter allows for effective rest.');
-      } else {
-        immediateEffect = 'You rest and focus on staying calm.';
-        consequences.push('Your energy recovers, but conditions are challenging.');
+      {
+        const shelterBonus = Math.floor(state.metrics.shelter / 20);
+        const baseEnergyGain = -decision.energyCost;
+        const totalEnergyGain = baseEnergyGain + shelterBonus;
+  
+        metricsChange = {
+          energy: totalEnergyGain,
+          morale: 5
+        };
+  
+        // Passive injury healing when resting in good shelter
+        if (state.metrics.shelter > 60 && state.metrics.injurySeverity > 0) {
+          metricsChange.injurySeverity = -5; // Heal 5 injury per rest
+          immediateEffect = 'You rest in your shelter. Your energy recovers and injuries heal.';
+          consequences.push('Good shelter allows for effective rest and recovery.');
+        } else if (state.metrics.shelter > 50) {
+          immediateEffect = 'You rest in your shelter. Your energy recovers well.';
+          consequences.push('Good shelter allows for effective rest.');
+        } else {
+          immediateEffect = 'You rest and focus on staying calm.';
+          consequences.push('Your energy recovers, but conditions are challenging.');
+        }
+  
+        if (state.scenario.weather === 'storm' && state.metrics.shelter < 40) {
+          metricsChange.bodyTemperature = -0.3;
+          consequences.push('The harsh weather makes rest difficult.');
+        }
+        break;
       }
-
-      if (state.scenario.weather === 'storm' && state.metrics.shelter < 40) {
-        metricsChange.bodyTemperature = -0.3;
-        consequences.push('The harsh weather makes rest difficult.');
-      }
-      break;
 
     case 'drink':
-      const waterItem = state.equipment.find(e => e.name.includes('Water') || e.name.includes('water'));
-      metricsChange = {
-        energy: -actualEnergyCost,
-        hydration: 25,
-        morale: 4
-      };
-      immediateEffect = 'You drink your water supply.';
-      consequences.push('You feel better. The water is now gone.');
-      if (waterItem) {
-        equipmentChanges.removed = [waterItem.name];
+      {
+        const waterItem = state.equipment.find(e => e.name.includes('Water') || e.name.includes('water'));
+        metricsChange = {
+          energy: -actualEnergyCost,
+          hydration: 25,
+          morale: 4
+        };
+        immediateEffect = 'You drink your water supply.';
+        consequences.push('You feel better. The water is now gone.');
+        if (waterItem) {
+          equipmentChanges.removed = [waterItem.name];
+        }
+        break;
       }
-      break;
 
     case 'fortify':
       metricsChange = {
@@ -1740,49 +1803,53 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       break;
 
     case 'treat-injury-full':
-      const firstAidItem = state.equipment.find(e => e.name.includes('First aid') || e.name.includes('first aid'));
-      const healingAmount = state.metrics.injurySeverity > 50 ? -25 : -20;
-      metricsChange = {
-        energy: -actualEnergyCost,
-        injurySeverity: healingAmount,
-        morale: 8
-      };
-      immediateEffect = 'You carefully treat your injuries with the first aid kit.';
-      consequences.push('The wound is properly cleaned, disinfected, and bandaged.');
-      consequences.push('Pain and infection risk are significantly reduced.');
-      if (firstAidItem) {
-        equipmentChanges.removed = [firstAidItem.name];
+      {
+        const firstAidItem = state.equipment.find(e => e.name.includes('First aid') || e.name.includes('first aid'));
+        const healingAmount = state.metrics.injurySeverity > 50 ? -25 : -20;
+        metricsChange = {
+          energy: -actualEnergyCost,
+          injurySeverity: healingAmount,
+          morale: 8
+        };
+        immediateEffect = 'You carefully treat your injuries with the first aid kit.';
+        consequences.push('The wound is properly cleaned, disinfected, and bandaged.');
+        consequences.push('Pain and infection risk are significantly reduced.');
+        if (firstAidItem) {
+          equipmentChanges.removed = [firstAidItem.name];
+        }
+        break;
       }
-      break;
 
     case 'treat-injury-partial':
-      const bandageItem = state.equipment.find(e => e.name.toLowerCase().includes('bandage'));
-      const antisepticItem = state.equipment.find(e => e.name.toLowerCase().includes('antiseptic') || e.name.toLowerCase().includes('alcohol'));
-      const hasBoth = bandageItem && antisepticItem;
-      const partialHealAmount = hasBoth ? -15 : -10;
-
-      metricsChange = {
-        energy: -actualEnergyCost,
-        injurySeverity: partialHealAmount,
-        morale: hasBoth ? 6 : 4
-      };
-
-      if (hasBoth) {
-        immediateEffect = 'You clean the wound with antiseptic and apply fresh bandages.';
-        consequences.push('The treatment is effective with the supplies you have.');
-        equipmentChanges.removed = [bandageItem.name, antisepticItem.name];
-      } else if (antisepticItem) {
-        immediateEffect = 'You disinfect the wound but lack proper bandages.';
-        consequences.push('The antiseptic helps prevent infection.');
-        equipmentChanges.removed = [antisepticItem.name];
-      } else {
-        immediateEffect = 'You apply bandages to your injuries.';
-        consequences.push('The bleeding is controlled but the wound needs cleaning.');
-        if (bandageItem) {
-          equipmentChanges.removed = [bandageItem.name];
+      {
+        const bandageItem = state.equipment.find(e => e.name.toLowerCase().includes('bandage'));
+        const antisepticItem = state.equipment.find(e => e.name.toLowerCase().includes('antiseptic') || e.name.toLowerCase().includes('alcohol'));
+        const hasBoth = bandageItem && antisepticItem;
+        const partialHealAmount = hasBoth ? -15 : -10;
+  
+        metricsChange = {
+          energy: -actualEnergyCost,
+          injurySeverity: partialHealAmount,
+          morale: hasBoth ? 6 : 4
+        };
+  
+        if (hasBoth) {
+          immediateEffect = 'You clean the wound with antiseptic and apply fresh bandages.';
+          consequences.push('The treatment is effective with the supplies you have.');
+          equipmentChanges.removed = [bandageItem.name, antisepticItem.name];
+        } else if (antisepticItem) {
+          immediateEffect = 'You disinfect the wound but lack proper bandages.';
+          consequences.push('The antiseptic helps prevent infection.');
+          equipmentChanges.removed = [antisepticItem.name];
+        } else {
+          immediateEffect = 'You apply bandages to your injuries.';
+          consequences.push('The bleeding is controlled but the wound needs cleaning.');
+          if (bandageItem) {
+            equipmentChanges.removed = [bandageItem.name];
+          }
         }
+        break;
       }
-      break;
 
     case 'improvise-treatment':
       metricsChange = {
@@ -1807,67 +1874,69 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       break;
 
     case 'eat-food':
-      const foodItem = state.equipment.find(e =>
-        e.name.includes('Energy bar') ||
-        e.name.includes('berries') ||
-        e.name.includes('Berries') ||
-        e.name.includes('mushrooms') ||
-        e.name.includes('fruit') ||
-        e.name.includes('roots') ||
-        e.name.includes('lichen') ||
-        e.name.includes('seaweed') ||
-        e.name.includes('weeds') ||
-        e.name.includes('succulents') ||
-        e.name.toLowerCase().includes('food')
-      );
-
-      // Energy gain varies by food type
-      let energyGain = 18; // Default for foraged food
-      let hydrationChange = -2; // Most food is dry
-      let moraleGain = 5;
-
-      if (foodItem?.name.includes('Energy bar')) {
-        energyGain = 30;
-        hydrationChange = 0;
-        moraleGain = 8;
-      } else if (foodItem?.name.includes('mushrooms') || foodItem?.name.includes('roots')) {
-        energyGain = 22; // More substantial
-        hydrationChange = -1;
-        moraleGain = 6;
-      } else if (foodItem?.name.includes('fruit') || foodItem?.name.includes('berries')) {
-        energyGain = 18;
-        hydrationChange = 2; // Fruit provides hydration
-        moraleGain = 7;
-      } else if (foodItem?.name.includes('seaweed') || foodItem?.name.includes('lichen')) {
-        energyGain = 12; // Less nutritious
-        hydrationChange = 1;
-        moraleGain = 3;
-      }
-
-      metricsChange = {
-        energy: energyGain - decision.energyCost,
-        morale: moraleGain,
-        hydration: hydrationChange
-      };
-
-      immediateEffect = `You eat the ${foodItem?.name.toLowerCase()}. Your energy increases.`;
-      consequences.push(`You gain ${energyGain} energy.`);
-
-      if (foodItem) {
-        if (foodItem.quantity > 1) {
-          equipmentChanges.updated = [{
-            ...foodItem,
-            quantity: foodItem.quantity - 1
-          }];
-          consequences.push(`You have ${foodItem.quantity - 1} remaining.`);
-        } else {
-          equipmentChanges.removed = [foodItem.name];
-          consequences.push('That was your last food.');
+      {
+        const foodItem = state.equipment.find(e =>
+          e.name.includes('Energy bar') ||
+          e.name.includes('berries') ||
+          e.name.includes('Berries') ||
+          e.name.includes('mushrooms') ||
+          e.name.includes('fruit') ||
+          e.name.includes('roots') ||
+          e.name.includes('lichen') ||
+          e.name.includes('seaweed') ||
+          e.name.includes('weeds') ||
+          e.name.includes('succulents') ||
+          e.name.toLowerCase().includes('food')
+        );
+  
+        // Energy gain varies by food type
+        let energyGain = 18; // Default for foraged food
+        let hydrationChange = -2; // Most food is dry
+        let moraleGain = 5;
+  
+        if (foodItem?.name.includes('Energy bar')) {
+          energyGain = 30;
+          hydrationChange = 0;
+          moraleGain = 8;
+        } else if (foodItem?.name.includes('mushrooms') || foodItem?.name.includes('roots')) {
+          energyGain = 22; // More substantial
+          hydrationChange = -1;
+          moraleGain = 6;
+        } else if (foodItem?.name.includes('fruit') || foodItem?.name.includes('berries')) {
+          energyGain = 18;
+          hydrationChange = 2; // Fruit provides hydration
+          moraleGain = 7;
+        } else if (foodItem?.name.includes('seaweed') || foodItem?.name.includes('lichen')) {
+          energyGain = 12; // Less nutritious
+          hydrationChange = 1;
+          moraleGain = 3;
         }
+  
+        metricsChange = {
+          energy: energyGain - decision.energyCost,
+          morale: moraleGain,
+          hydration: hydrationChange
+        };
+  
+        immediateEffect = `You eat the ${foodItem?.name.toLowerCase()}. Your energy increases.`;
+        consequences.push(`You gain ${energyGain} energy.`);
+  
+        if (foodItem) {
+          if (foodItem.quantity > 1) {
+            equipmentChanges.updated = [{
+              ...foodItem,
+              quantity: foodItem.quantity - 1
+            }];
+            consequences.push(`You have ${foodItem.quantity - 1} remaining.`);
+          } else {
+            equipmentChanges.removed = [foodItem.name];
+            consequences.push('That was your last food.');
+          }
+        }
+        break;
       }
-      break;
 
-    case 'forage-food':
+    case 'forage-food': {
       // Environment affects foraging success and food type
       let foragingSuccessThreshold = 0.3; // Base 70% success
       let foodType = 'Wild berries';
@@ -1946,15 +2015,16 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
         // Excellent success
         immediateEffect = `You find abundant ${foodType.toLowerCase()}! ${environmentContext}`;
         consequences.push('Your knowledge of wild edibles pays off.');
-        equipmentChanges.added = [{ name: foodType, quantity: foodQuantity + 1, condition: 'good' as const }];
+        equipmentChanges.added = [{ name: foodType, quantity: foodQuantity + 1, condition: 'good' as const, volumeLiters: 0.3 }];
         metricsChange.morale = 12;
       } else {
         // Normal success
         immediateEffect = `You successfully forage ${foodType.toLowerCase()}. ${environmentContext}`;
         consequences.push('The food should help sustain you.');
-        equipmentChanges.added = [{ name: foodType, quantity: foodQuantity, condition: 'good' as const }];
+        equipmentChanges.added = [{ name: foodType, quantity: foodQuantity, condition: 'good' as const, volumeLiters: 0.3 }];
       }
       break;
+    }
 
     // Fire gathering
     case 'gather-tinder':
@@ -1966,11 +2036,11 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       if (roll > 0.7) {
         immediateEffect = 'You find excellent dry tinder - grass, bark, and pine needles.';
         consequences.push('This tinder will catch fire easily.');
-        equipmentChanges.added = [{ name: 'Tinder bundle', quantity: 2, condition: 'good' as const }];
+        equipmentChanges.added = [{ name: 'Tinder bundle', quantity: 2, condition: 'good' as const, volumeLiters: 0.3 }];
       } else {
         immediateEffect = 'You gather some usable tinder from the area.';
         consequences.push('It should be enough to start a fire.');
-        equipmentChanges.added = [{ name: 'Tinder bundle', quantity: 1, condition: 'good' as const }];
+        equipmentChanges.added = [{ name: 'Tinder bundle', quantity: 1, condition: 'good' as const, volumeLiters: 0.3 }];
       }
       break;
 
@@ -1984,138 +2054,142 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
         immediateEffect = 'You gather quality firewood - both kindling and larger fuel.';
         consequences.push('You collect a good supply of dry wood.');
         equipmentChanges.added = [
-          { name: 'Kindling sticks', quantity: 3, condition: 'good' as const },
-          { name: 'Fuel logs', quantity: 1, condition: 'good' as const }
+          { name: 'Kindling sticks', quantity: 3, condition: 'good' as const, volumeLiters: 1.5 },
+          { name: 'Fuel logs', quantity: 1, condition: 'good' as const, volumeLiters: 2.0 }
         ];
       } else {
         immediateEffect = 'You find some firewood, though not as much as you hoped.';
         consequences.push('The wood quality is acceptable.');
         equipmentChanges.added = [
-          { name: 'Kindling sticks', quantity: 2, condition: 'good' as const }
+          { name: 'Kindling sticks', quantity: 2, condition: 'good' as const, volumeLiters: 1.5 }
         ];
       }
       break;
 
     // Starting fire
     case 'start-fire-lighter':
-      const tinderForLighter = state.equipment.find(e => e.name.toLowerCase().includes('tinder'));
-
-      // Weather affects fire starting difficulty
-      let lighterThreshold = 0.05; // Base 95% success
-      if (state.scenario.weather === 'rain') {
-        lighterThreshold = 0.35; // 65% success in rain
-      } else if (state.scenario.weather === 'storm' || state.scenario.weather === 'snow') {
-        lighterThreshold = 0.55; // 45% success in storm/snow
-      } else if (state.scenario.weather === 'wind' && state.scenario.windSpeed > 30) {
-        lighterThreshold = 0.25; // 75% success in high wind
-      }
-
-      // Shelter provides protection when starting fire
-      if (state.metrics.shelter > 60) {
-        lighterThreshold = lighterThreshold * 0.5; // Shelter reduces difficulty
-      }
-
-      metricsChange = {
-        energy: -decision.energyCost,
-        fireQuality: 75,
-        morale: 18,
-        cumulativeRisk: -10
-      };
-
-      if (roll < lighterThreshold) {
-        // Failure
-        immediateEffect = 'The lighter sparks but the wind/rain snuffs out every attempt.';
-        consequences.push('The conditions are too harsh. The fire will not catch.');
-        metricsChange.fireQuality = 0;
-        metricsChange.morale = -12;
-        metricsChange.cumulativeRisk = 5;
-      } else if (roll > 0.95) {
-        immediateEffect = 'The lighter sparks perfectly. The tinder catches and flames quickly spread.';
-        consequences.push('You have a strong fire burning.');
-        metricsChange.fireQuality = 85;
-      } else if (roll > lighterThreshold + 0.3) {
-        immediateEffect = 'The lighter ignites the tinder. Soon you have a good fire.';
-        consequences.push('The fire is burning steadily.');
-      } else {
-        immediateEffect = 'After many attempts, the lighter finally lights the damp tinder.';
-        consequences.push('The fire starts weakly but should build.');
-        metricsChange.fireQuality = 60;
-        metricsChange.morale = 12;
-      }
-      if (tinderForLighter) {
-        if (tinderForLighter.quantity > 1) {
-          equipmentChanges.updated = [{
-            ...tinderForLighter,
-            quantity: tinderForLighter.quantity - 1
-          }];
-        } else {
-          equipmentChanges.removed = [tinderForLighter.name];
+      {
+        const tinderForLighter = state.equipment.find(e => e.name.toLowerCase().includes('tinder'));
+  
+        // Weather affects fire starting difficulty
+        let lighterThreshold = 0.05; // Base 95% success
+        if (state.scenario.weather === 'rain') {
+          lighterThreshold = 0.35; // 65% success in rain
+        } else if (state.scenario.weather === 'storm' || state.scenario.weather === 'snow') {
+          lighterThreshold = 0.55; // 45% success in storm/snow
+        } else if (state.scenario.weather === 'wind' && state.scenario.windSpeed > 30) {
+          lighterThreshold = 0.25; // 75% success in high wind
         }
+  
+        // Shelter provides protection when starting fire
+        if (state.metrics.shelter > 60) {
+          lighterThreshold = lighterThreshold * 0.5; // Shelter reduces difficulty
+        }
+  
+        metricsChange = {
+          energy: -decision.energyCost,
+          fireQuality: 75,
+          morale: 18,
+          cumulativeRisk: -10
+        };
+  
+        if (roll < lighterThreshold) {
+          // Failure
+          immediateEffect = 'The lighter sparks but the wind/rain snuffs out every attempt.';
+          consequences.push('The conditions are too harsh. The fire will not catch.');
+          metricsChange.fireQuality = 0;
+          metricsChange.morale = -12;
+          metricsChange.cumulativeRisk = 5;
+        } else if (roll > 0.95) {
+          immediateEffect = 'The lighter sparks perfectly. The tinder catches and flames quickly spread.';
+          consequences.push('You have a strong fire burning.');
+          metricsChange.fireQuality = 85;
+        } else if (roll > lighterThreshold + 0.3) {
+          immediateEffect = 'The lighter ignites the tinder. Soon you have a good fire.';
+          consequences.push('The fire is burning steadily.');
+        } else {
+          immediateEffect = 'After many attempts, the lighter finally lights the damp tinder.';
+          consequences.push('The fire starts weakly but should build.');
+          metricsChange.fireQuality = 60;
+          metricsChange.morale = 12;
+        }
+        if (tinderForLighter) {
+          if (tinderForLighter.quantity > 1) {
+            equipmentChanges.updated = [{
+              ...tinderForLighter,
+              quantity: tinderForLighter.quantity - 1
+            }];
+          } else {
+            equipmentChanges.removed = [tinderForLighter.name];
+          }
+        }
+        break;
       }
-      break;
 
     case 'start-fire-matches':
-      const tinderForMatches = state.equipment.find(e => e.name.toLowerCase().includes('tinder'));
-      const matchesItem = state.equipment.find(e => e.name.toLowerCase().includes('matches'));
-
-      // Weather affects matches even more than lighters
-      let matchesThreshold = 0.15; // Base 85% success
-      if (state.scenario.weather === 'rain') {
-        matchesThreshold = 0.50; // 50% success in rain (matches get wet easily)
-      } else if (state.scenario.weather === 'storm' || state.scenario.weather === 'snow') {
-        matchesThreshold = 0.70; // 30% success in storm/snow
-      } else if (state.scenario.weather === 'wind' && state.scenario.windSpeed > 30) {
-        matchesThreshold = 0.40; // 60% success in high wind
-      }
-
-      // Shelter provides significant protection for matches
-      if (state.metrics.shelter > 60) {
-        matchesThreshold = matchesThreshold * 0.4; // Shelter greatly helps with matches
-      }
-
-      metricsChange = {
-        energy: -decision.energyCost,
-        fireQuality: 70,
-        morale: 15,
-        cumulativeRisk: -8
-      };
-
-      if (roll < matchesThreshold) {
-        // Failure - matches wasted
-        immediateEffect = 'The matches are too damp or the wind is too strong. They burn out uselessly.';
-        consequences.push('You wasted your matches. The fire did not catch.');
-        metricsChange.fireQuality = 0;
-        metricsChange.morale = -15;
-        metricsChange.cumulativeRisk = 8;
-      } else if (roll > 0.85) {
-        immediateEffect = 'The match strikes true and the tinder catches immediately.';
-        consequences.push('You have a solid fire going.');
-        metricsChange.fireQuality = 80;
-      } else if (roll > matchesThreshold + 0.2) {
-        immediateEffect = 'After a couple tries, the match lights the tinder successfully.';
-        consequences.push('The fire is building nicely.');
-      } else {
-        immediateEffect = 'You use several matches before one finally catches the damp tinder.';
-        consequences.push('The fire is weak but alive.');
-        metricsChange.fireQuality = 50;
-        metricsChange.morale = 8;
-      }
-      if (tinderForMatches) {
-        if (tinderForMatches.quantity > 1) {
-          equipmentChanges.updated = [{
-            ...tinderForMatches,
-            quantity: tinderForMatches.quantity - 1
-          }];
-        } else {
-          equipmentChanges.removed = [tinderForMatches.name];
+      {
+        const tinderForMatches = state.equipment.find(e => e.name.toLowerCase().includes('tinder'));
+        const matchesItem = state.equipment.find(e => e.name.toLowerCase().includes('matches'));
+  
+        // Weather affects matches even more than lighters
+        let matchesThreshold = 0.15; // Base 85% success
+        if (state.scenario.weather === 'rain') {
+          matchesThreshold = 0.50; // 50% success in rain (matches get wet easily)
+        } else if (state.scenario.weather === 'storm' || state.scenario.weather === 'snow') {
+          matchesThreshold = 0.70; // 30% success in storm/snow
+        } else if (state.scenario.weather === 'wind' && state.scenario.windSpeed > 30) {
+          matchesThreshold = 0.40; // 60% success in high wind
         }
+  
+        // Shelter provides significant protection for matches
+        if (state.metrics.shelter > 60) {
+          matchesThreshold = matchesThreshold * 0.4; // Shelter greatly helps with matches
+        }
+  
+        metricsChange = {
+          energy: -decision.energyCost,
+          fireQuality: 70,
+          morale: 15,
+          cumulativeRisk: -8
+        };
+  
+        if (roll < matchesThreshold) {
+          // Failure - matches wasted
+          immediateEffect = 'The matches are too damp or the wind is too strong. They burn out uselessly.';
+          consequences.push('You wasted your matches. The fire did not catch.');
+          metricsChange.fireQuality = 0;
+          metricsChange.morale = -15;
+          metricsChange.cumulativeRisk = 8;
+        } else if (roll > 0.85) {
+          immediateEffect = 'The match strikes true and the tinder catches immediately.';
+          consequences.push('You have a solid fire going.');
+          metricsChange.fireQuality = 80;
+        } else if (roll > matchesThreshold + 0.2) {
+          immediateEffect = 'After a couple tries, the match lights the tinder successfully.';
+          consequences.push('The fire is building nicely.');
+        } else {
+          immediateEffect = 'You use several matches before one finally catches the damp tinder.';
+          consequences.push('The fire is weak but alive.');
+          metricsChange.fireQuality = 50;
+          metricsChange.morale = 8;
+        }
+        if (tinderForMatches) {
+          if (tinderForMatches.quantity > 1) {
+            equipmentChanges.updated = [{
+              ...tinderForMatches,
+              quantity: tinderForMatches.quantity - 1
+            }];
+          } else {
+            equipmentChanges.removed = [tinderForMatches.name];
+          }
+        }
+        if (matchesItem) {
+          equipmentChanges.removed = (equipmentChanges.removed || []).concat([matchesItem.name]);
+        }
+        break;
       }
-      if (matchesItem) {
-        equipmentChanges.removed = (equipmentChanges.removed || []).concat([matchesItem.name]);
-      }
-      break;
 
-    case 'start-fire-friction':
+    case 'start-fire-friction': {
       metricsChange = {
         energy: -decision.energyCost,
         hydration: -8,
@@ -2155,51 +2229,56 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
         metricsChange.injurySeverity = 5;
       }
       break;
+    }
 
     // Maintaining fire
     case 'add-fuel-small':
-      const kindlingItem = state.equipment.find(e => e.name.toLowerCase().includes('kindling'));
-      metricsChange = {
-        energy: -decision.energyCost,
-        fireQuality: 15,
-        morale: 4
-      };
-      immediateEffect = 'You add kindling to the fire. The flames grow brighter.';
-      consequences.push('The fire will burn steadily for a while.');
-      if (kindlingItem) {
-        if (kindlingItem.quantity > 1) {
-          equipmentChanges.updated = [{
-            ...kindlingItem,
-            quantity: kindlingItem.quantity - 1
-          }];
-        } else {
-          equipmentChanges.removed = [kindlingItem.name];
-          consequences.push('That was your last kindling.');
+      {
+        const kindlingItem = state.equipment.find(e => e.name.toLowerCase().includes('kindling'));
+        metricsChange = {
+          energy: -decision.energyCost,
+          fireQuality: 15,
+          morale: 4
+        };
+        immediateEffect = 'You add kindling to the fire. The flames grow brighter.';
+        consequences.push('The fire will burn steadily for a while.');
+        if (kindlingItem) {
+          if (kindlingItem.quantity > 1) {
+            equipmentChanges.updated = [{
+              ...kindlingItem,
+              quantity: kindlingItem.quantity - 1
+            }];
+          } else {
+            equipmentChanges.removed = [kindlingItem.name];
+            consequences.push('That was your last kindling.');
+          }
         }
+        break;
       }
-      break;
 
     case 'add-fuel-large':
-      const fuelLogItem = state.equipment.find(e => e.name.toLowerCase().includes('fuel log'));
-      metricsChange = {
-        energy: -decision.energyCost,
-        fireQuality: 35,
-        morale: 8
-      };
-      immediateEffect = 'You place a large log on the fire. It catches and burns strongly.';
-      consequences.push('This fuel should last for several hours.');
-      if (fuelLogItem) {
-        if (fuelLogItem.quantity > 1) {
-          equipmentChanges.updated = [{
-            ...fuelLogItem,
-            quantity: fuelLogItem.quantity - 1
-          }];
-        } else {
-          equipmentChanges.removed = [fuelLogItem.name];
-          consequences.push('That was your last fuel log.');
+      {
+        const fuelLogItem = state.equipment.find(e => e.name.toLowerCase().includes('fuel log'));
+        metricsChange = {
+          energy: -decision.energyCost,
+          fireQuality: 35,
+          morale: 8
+        };
+        immediateEffect = 'You place a large log on the fire. It catches and burns strongly.';
+        consequences.push('This fuel should last for several hours.');
+        if (fuelLogItem) {
+          if (fuelLogItem.quantity > 1) {
+            equipmentChanges.updated = [{
+              ...fuelLogItem,
+              quantity: fuelLogItem.quantity - 1
+            }];
+          } else {
+            equipmentChanges.removed = [fuelLogItem.name];
+            consequences.push('That was your last fuel log.');
+          }
         }
+        break;
       }
-      break;
 
     case 'tend-fire':
       metricsChange = {
@@ -2211,7 +2290,7 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       consequences.push('The fire burns more efficiently.');
       break;
 
-    case 'signal-fire':
+    case 'signal-fire': {
       // Principle: "Fire provides signaling" and "Three fires in a triangle is international distress signal"
       metricsChange = {
         energy: -actualEnergyCost,
@@ -2260,9 +2339,10 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
 
       // This is a signal attempt that can lead to rescue
       break;
+    }
 
     // Water collection and purification
-    case 'collect-water':
+    case 'collect-water': {
       // Environment affects water availability and quality
       let waterSuccessThreshold = 0.3; // Base threshold (lower = easier)
       let waterQualityBonus = 0;
@@ -2322,16 +2402,16 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       } else if (adjustedRoll > 0.75) {
         immediateEffect = `You find a clear, flowing water source. ${environmentFeedback}`;
         consequences.push('The water looks clean but should still be purified.');
-        equipmentChanges.added = [{ name: 'Water bottle (untreated)', quantity: 1, condition: 'good' as const }];
+        equipmentChanges.added = [{ name: 'Water bottle (untreated)', quantity: 1, condition: 'good' as const, volumeLiters: 1.0 }];
         metricsChange.morale = 12;
       } else if (adjustedRoll > 0.45) {
         immediateEffect = `You locate a water source. ${environmentFeedback}`;
         consequences.push('The water is murky but will help if purified.');
-        equipmentChanges.added = [{ name: 'Water bottle (untreated)', quantity: 1, condition: 'good' as const }];
+        equipmentChanges.added = [{ name: 'Water bottle (untreated)', quantity: 1, condition: 'good' as const, volumeLiters: 1.0 }];
       } else {
         immediateEffect = `After searching, you find only a questionable water source. ${environmentFeedback}`;
         consequences.push('The water quality is poor even for wilderness standards.');
-        equipmentChanges.added = [{ name: 'Water bottle (untreated)', quantity: 1, condition: 'worn' as const }];
+        equipmentChanges.added = [{ name: 'Water bottle (untreated)', quantity: 1, condition: 'worn' as const, volumeLiters: 1.0 }];
         metricsChange.morale = 2;
       }
 
@@ -2341,69 +2421,76 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
         equipmentChanges.removed = [emptyBottle.name];
       }
       break;
+    }
 
     case 'boil-water':
-      const untreatedBottle = state.equipment.find(e => e.name.toLowerCase().includes('water bottle (untreated)'));
-      metricsChange = {
-        energy: -decision.energyCost,
-        fireQuality: -10,
-        morale: 8
-      };
-      immediateEffect = 'You boil the water over the fire. Steam rises as pathogens die.';
-      consequences.push('The water is now safe to drink.');
-      consequences.push('Boiling consumed some of your fire.');
-      if (untreatedBottle) {
-        equipmentChanges.removed = [untreatedBottle.name];
-        equipmentChanges.added = [{ name: 'Water bottle (clean)', quantity: 1, condition: 'good' as const }];
+      {
+        const untreatedBottle = state.equipment.find(e => e.name.toLowerCase().includes('water bottle (untreated)'));
+        metricsChange = {
+          energy: -decision.energyCost,
+          fireQuality: -10,
+          morale: 8
+        };
+        immediateEffect = 'You boil the water over the fire. Steam rises as pathogens die.';
+        consequences.push('The water is now safe to drink.');
+        consequences.push('Boiling consumed some of your fire.');
+        if (untreatedBottle) {
+          equipmentChanges.removed = [untreatedBottle.name];
+          equipmentChanges.added = [{ name: 'Water bottle (clean)', quantity: 1, condition: 'good' as const, volumeLiters: 1.0 }];
+        }
+        break;
       }
-      break;
 
     case 'drink-clean-water':
-      const cleanBottle = state.equipment.find(e => e.name.toLowerCase().includes('water bottle (clean)') ||
-        (e.name.toLowerCase().includes('water bottle') && !e.name.toLowerCase().includes('empty') && !e.name.toLowerCase().includes('untreated')));
-      metricsChange = {
-        energy: -decision.energyCost,
-        hydration: 40,
-        morale: 8
-      };
-      immediateEffect = 'You drink the clean water. It tastes amazing.';
-      consequences.push('Your hydration increases significantly.');
-      if (cleanBottle) {
-        equipmentChanges.removed = [cleanBottle.name];
-        equipmentChanges.added = [{ name: 'Water bottle (empty)', quantity: 1, condition: 'good' as const }];
+      {
+        const cleanBottle = state.equipment.find(e => e.name.toLowerCase().includes('water bottle (clean)') ||
+          (e.name.toLowerCase().includes('water bottle') && !e.name.toLowerCase().includes('empty') && !e.name.toLowerCase().includes('untreated')));
+        metricsChange = {
+          energy: -decision.energyCost,
+          hydration: 40,
+          morale: 8
+        };
+        immediateEffect = 'You drink the clean water. It tastes amazing.';
+        consequences.push('Your hydration increases significantly.');
+        if (cleanBottle) {
+          equipmentChanges.removed = [cleanBottle.name];
+          equipmentChanges.added = [{ name: 'Water bottle (empty)', quantity: 1, condition: 'good' as const, volumeLiters: 1.0 }];
+        }
+        break;
       }
-      break;
 
     case 'drink-untreated-water':
-      const untreatedDrinkBottle = state.equipment.find(e => e.name.toLowerCase().includes('water bottle (untreated)'));
-      metricsChange = {
-        energy: -decision.energyCost,
-        hydration: 35,
-        morale: 2
-      };
-      immediateEffect = 'You drink the untreated water. It helps, but you worry about contaminants.';
-      consequences.push('Your hydration improves, but there may be consequences...');
-
-      // 40% chance of delayed illness
-      if (roll < 0.4) {
-        const illnessTurn = state.turnNumber + Math.floor(Math.random() * 3) + 2; // 2-4 turns later
-        delayedEffects.push({
-          turn: illnessTurn,
-          effect: 'Stomach cramps grip you. The untreated water was contaminated.',
-          metricsChange: {
-            energy: -20,
-            morale: -15,
-            injurySeverity: 12,
-            hydration: -25
-          }
-        });
+      {
+        const untreatedDrinkBottle = state.equipment.find(e => e.name.toLowerCase().includes('water bottle (untreated)'));
+        metricsChange = {
+          energy: -decision.energyCost,
+          hydration: 35,
+          morale: 2
+        };
+        immediateEffect = 'You drink the untreated water. It helps, but you worry about contaminants.';
+        consequences.push('Your hydration improves, but there may be consequences...');
+  
+        // 40% chance of delayed illness
+        if (roll < 0.4) {
+          const illnessTurn = state.turnNumber + Math.floor(Math.random() * 3) + 2; // 2-4 turns later
+          delayedEffects.push({
+            turn: illnessTurn,
+            effect: 'Stomach cramps grip you. The untreated water was contaminated.',
+            metricsChange: {
+              energy: -20,
+              morale: -15,
+              injurySeverity: 12,
+              hydration: -25
+            }
+          });
+        }
+  
+        if (untreatedDrinkBottle) {
+          equipmentChanges.removed = [untreatedDrinkBottle.name];
+          equipmentChanges.added = [{ name: 'Water bottle (empty)', quantity: 1, condition: 'good' as const, volumeLiters: 1.0 }];
+        }
+        break;
       }
-
-      if (untreatedDrinkBottle) {
-        equipmentChanges.removed = [untreatedDrinkBottle.name];
-        equipmentChanges.added = [{ name: 'Water bottle (empty)', quantity: 1, condition: 'good' as const }];
-      }
-      break;
 
     case 'use-whistle':
       metricsChange = {
@@ -2448,33 +2535,35 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       break;
 
     case 'use-flashlight-scout':
-      const flashlightScout = state.equipment.find(e => e.name.toLowerCase().includes('flashlight'));
-      metricsChange = {
-        energy: -decision.energyCost,
-        hydration: -4
-      };
-      if (roll > 0.7) {
-        immediateEffect = 'Using the flashlight, you discover a shelter or resource cache.';
-        consequences.push('The darkness concealed something valuable.');
-        metricsChange.morale = 12;
-        equipmentChanges.added = [{ name: 'Emergency supplies', quantity: 1, condition: 'good' as const }];
-      } else if (roll > 0.4) {
-        immediateEffect = 'You carefully explore with the flashlight. Nothing dangerous nearby.';
-        consequences.push('You understand your immediate surroundings better.');
-        metricsChange.morale = 4;
-      } else {
-        immediateEffect = 'The flashlight reveals difficult terrain in all directions.';
-        consequences.push('Your situation is more challenging than you hoped.');
-        metricsChange.morale = -5;
+      {
+        const flashlightScout = state.equipment.find(e => e.name.toLowerCase().includes('flashlight'));
+        metricsChange = {
+          energy: -decision.energyCost,
+          hydration: -4
+        };
+        if (roll > 0.7) {
+          immediateEffect = 'Using the flashlight, you discover a shelter or resource cache.';
+          consequences.push('The darkness concealed something valuable.');
+          metricsChange.morale = 12;
+          equipmentChanges.added = [{ name: 'Emergency supplies', quantity: 1, condition: 'good' as const, volumeLiters: 1.0 }];
+        } else if (roll > 0.4) {
+          immediateEffect = 'You carefully explore with the flashlight. Nothing dangerous nearby.';
+          consequences.push('You understand your immediate surroundings better.');
+          metricsChange.morale = 4;
+        } else {
+          immediateEffect = 'The flashlight reveals difficult terrain in all directions.';
+          consequences.push('Your situation is more challenging than you hoped.');
+          metricsChange.morale = -5;
+        }
+        if (flashlightScout && flashlightScout.condition !== 'good' && roll < 0.3) {
+          equipmentChanges.updated = [{
+            ...flashlightScout,
+            condition: 'damaged' as const
+          }];
+          consequences.push('The flashlight batteries are running low.');
+        }
+        break;
       }
-      if (flashlightScout && flashlightScout.condition !== 'good' && roll < 0.3) {
-        equipmentChanges.updated = [{
-          ...flashlightScout,
-          condition: 'damaged' as const
-        }];
-        consequences.push('The flashlight batteries are running low.');
-      }
-      break;
 
     case 'use-flashlight-signal':
       metricsChange = {
@@ -2494,25 +2583,27 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       break;
 
     case 'use-blanket':
-      const blanketItem = state.equipment.find(e => e.name.toLowerCase().includes('blanket'));
-      metricsChange = {
-        energy: -actualEnergyCost,
-        bodyTemperature: 0.8,
-        morale: 10,
-        shelter: 20,
-        cumulativeRisk: -6
-      };
-      immediateEffect = 'You wrap yourself in the emergency blanket. Heat retention improves dramatically.';
-      consequences.push('Your body temperature stabilizes.');
-      consequences.push('The reflective blanket provides crucial insulation.');
-      if (blanketItem && roll < 0.3) {
-        equipmentChanges.updated = [{
-          ...blanketItem,
-          condition: 'worn' as const
-        }];
-        consequences.push('The blanket is showing wear from use.');
+      {
+        const blanketItem = state.equipment.find(e => e.name.toLowerCase().includes('blanket'));
+        metricsChange = {
+          energy: -actualEnergyCost,
+          bodyTemperature: 0.8,
+          morale: 10,
+          shelter: 20,
+          cumulativeRisk: -6
+        };
+        immediateEffect = 'You wrap yourself in the emergency blanket. Heat retention improves dramatically.';
+        consequences.push('Your body temperature stabilizes.');
+        consequences.push('The reflective blanket provides crucial insulation.');
+        if (blanketItem && roll < 0.3) {
+          equipmentChanges.updated = [{
+            ...blanketItem,
+            condition: 'worn' as const
+          }];
+          consequences.push('The blanket is showing wear from use.');
+        }
+        break;
       }
-      break;
 
 
     case 'use-knife-shelter':
@@ -2640,7 +2731,7 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
         metricsChange.cumulativeRisk = -3;
         // Chance to find equipment or resources
         if (roll > 0.85) {
-          equipmentChanges.added = [{ name: 'Found supplies', quantity: 1, condition: 'good' as const }];
+          equipmentChanges.added = [{ name: 'Found supplies', quantity: 1, condition: 'good' as const, volumeLiters: 1.0 }];
           consequences.push('You found useful supplies!');
         }
       } else {
@@ -2660,11 +2751,11 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
         consequences.push('Your knowledge targets the most valuable resources.');
         metricsChange.energy = 15; // Net positive!
         metricsChange.morale = 15;
-        equipmentChanges.added = [{ name: 'Edible berries', quantity: 2, condition: 'good' as const }];
+        equipmentChanges.added = [{ name: 'Edible berries', quantity: 2, condition: 'good' as const, volumeLiters: 0.2 }];
       } else {
         immediateEffect = 'You forage carefully, avoiding toxic plants.';
         consequences.push('Safety first - no gains but no risks taken.');
-        equipmentChanges.added = [{ name: 'Edible berries', quantity: 1, condition: 'good' as const }];
+        equipmentChanges.added = [{ name: 'Edible berries', quantity: 1, condition: 'good' as const, volumeLiters: 0.2 }];
       }
       break;
 
@@ -2701,7 +2792,7 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       }
       break;
 
-    case 'desperate-rush':
+    case 'desperate-rush': {
       metricsChange = {
         energy: -actualEnergyCost,
         hydration: -10,
@@ -2728,6 +2819,7 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
         metricsChange.morale = -5;
       }
       break;
+    }
 
     case 'rest-and-reflect':
       metricsChange = {
@@ -2815,38 +2907,40 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       break;
 
     case 'emergency-flare':
-      const flare = state.equipment.find(e => e.name.toLowerCase().includes('flare'));
-      metricsChange = {
-        energy: -actualEnergyCost,
-        morale: 10
-      };
-
-      // 80% rescue if conditions good, but flare is consumed
-      if (roll > 0.20) {
-        immediateEffect = 'You fire the emergency flare. It arcs into the sky with a brilliant red glow.';
-        consequences.push('The flare is visible for miles!');
-
-        if (state.metrics.signalEffectiveness > 50 && state.turnNumber >= 10) {
-          immediateEffect += ' In the distance, you hear a helicopter changing course!';
-          consequences.push('RESCUE IMMINENT! The flare was spotted!');
-          metricsChange.morale = 40;
-          metricsChange.cumulativeRisk = -30;
+      {
+        const flare = state.equipment.find(e => e.name.toLowerCase().includes('flare'));
+        metricsChange = {
+          energy: -actualEnergyCost,
+          morale: 10
+        };
+  
+        // 80% rescue if conditions good, but flare is consumed
+        if (roll > 0.20) {
+          immediateEffect = 'You fire the emergency flare. It arcs into the sky with a brilliant red glow.';
+          consequences.push('The flare is visible for miles!');
+  
+          if (state.metrics.signalEffectiveness > 50 && state.turnNumber >= 10) {
+            immediateEffect += ' In the distance, you hear a helicopter changing course!';
+            consequences.push('RESCUE IMMINENT! The flare was spotted!');
+            metricsChange.morale = 40;
+            metricsChange.cumulativeRisk = -30;
+          } else {
+            consequences.push('The flare was impressive, but no response yet.');
+            metricsChange.morale = 15;
+            metricsChange.cumulativeRisk = -10;
+          }
         } else {
-          consequences.push('The flare was impressive, but no response yet.');
-          metricsChange.morale = 15;
-          metricsChange.cumulativeRisk = -10;
+          immediateEffect = 'You fire the flare but it misfires and fizzles out.';
+          consequences.push('The flare malfunctioned! Your only chance wasted!');
+          metricsChange.morale = -25;
+          metricsChange.cumulativeRisk = 15;
         }
-      } else {
-        immediateEffect = 'You fire the flare but it misfires and fizzles out.';
-        consequences.push('The flare malfunctioned! Your only chance wasted!');
-        metricsChange.morale = -25;
-        metricsChange.cumulativeRisk = 15;
+  
+        if (flare) {
+          equipmentChanges.removed = [flare.name];
+        }
+        break;
       }
-
-      if (flare) {
-        equipmentChanges.removed = [flare.name];
-      }
-      break;
 
     case 'river-crossing':
       metricsChange = {
@@ -2930,7 +3024,7 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       }
       break;
 
-    case 'maintain-signal-pattern':
+    case 'maintain-signal-pattern': {
       metricsChange = {
         energy: -actualEnergyCost,
         morale: 8,
@@ -2948,8 +3042,9 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
         metricsChange.cumulativeRisk = -18;
       }
       break;
+    }
 
-    case 'maintain-knife':
+    case 'maintain-knife': {
       metricsChange = {
         energy: -actualEnergyCost,
         morale: 5
@@ -2966,6 +3061,7 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
         metricsChange.morale = 10;
       }
       break;
+    }
 
     // CRITICAL MOMENT SCENARIOS
     case 'helicopter-spotted':
@@ -3025,7 +3121,7 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
         metricsChange.morale = 15;
         metricsChange.hydration = 20;
         metricsChange.cumulativeRisk = -10;
-        equipmentChanges.added = [{ name: 'Water bottle (untreated)', quantity: 2, condition: 'good' as const }];
+        equipmentChanges.added = [{ name: 'Water bottle (untreated)', quantity: 2, condition: 'good' as const, volumeLiters: 1.0 }];
       } else if (roll > 0.30) {
         immediateEffect = 'You find moisture from moss and morning dew.';
         consequences.push('It is not much, but every drop counts.');
@@ -3039,8 +3135,9 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
       }
       break;
 
-    default:
-      immediateEffect = 'You take action.';
+      default:
+        immediateEffect = 'You take action.';
+    }
   }
 
   // Add feedback for working during hot conditions
@@ -3106,7 +3203,7 @@ export function applyDecision(decision: Decision, state: GameState): DecisionOut
     outcome.wasNavigationSuccess = true;
   }
 
-  const evaluation = evaluateDecisionQuality(decision, state, outcome);
+  const evaluation = evaluateDecisionQuality(decision, state);
   outcome.decisionQuality = evaluation.quality;
   outcome.survivalPrincipleAlignment = evaluation.principle;
 

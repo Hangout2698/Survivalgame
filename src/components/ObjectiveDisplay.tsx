@@ -39,7 +39,7 @@ export function ObjectiveDisplay({ gameState }: ObjectiveDisplayProps) {
           </div>
           <p className="text-sm text-gray-300 leading-relaxed">
             <strong>Reach expedition camp</strong> (4-6 km south-southwest)<br />
-            <span className="text-xs text-gray-500">OR</span><br />
+            <span className="text-xs text-gray-300">OR</span><br />
             <strong>Survive until rescue</strong> (typically 24-48 hours)
           </p>
         </div>
@@ -49,12 +49,12 @@ export function ObjectiveDisplay({ gameState }: ObjectiveDisplayProps) {
           <div className="p-3 bg-gray-800/50 rounded-lg">
             <div className="flex items-center gap-2 mb-1">
               <Clock className="w-4 h-4 text-blue-400" />
-              <span className="text-xs text-gray-400">Time Survived</span>
+              <span className="text-xs text-gray-300">Time Survived</span>
             </div>
             <div className="text-lg font-bold text-blue-300">
               {hoursElapsed}h
             </div>
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-gray-300">
               {turnsCompleted} turns completed
             </div>
           </div>
@@ -62,7 +62,7 @@ export function ObjectiveDisplay({ gameState }: ObjectiveDisplayProps) {
           <div className="p-3 bg-gray-800/50 rounded-lg">
             <div className="flex items-center gap-2 mb-1">
               <TrendingUp className="w-4 h-4 text-green-400" />
-              <span className="text-xs text-gray-400">Survival Chance</span>
+              <span className="text-xs text-gray-300">Survival Chance</span>
             </div>
             <div className={`text-lg font-bold ${
               survivalProb >= 70 ? 'text-green-400' :
@@ -71,7 +71,7 @@ export function ObjectiveDisplay({ gameState }: ObjectiveDisplayProps) {
             }`}>
               {Math.round(survivalProb)}%
             </div>
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-gray-300">
               Current viability
             </div>
           </div>
@@ -80,12 +80,12 @@ export function ObjectiveDisplay({ gameState }: ObjectiveDisplayProps) {
             <div className="p-3 bg-gray-800/50 rounded-lg">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-base">📡</span>
-                <span className="text-xs text-gray-400">Signal Attempts</span>
+                <span className="text-xs text-gray-300">Signal Attempts</span>
               </div>
               <div className="text-lg font-bold text-blue-300">
                 {successfulSignals}/{signalAttempts}
               </div>
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-gray-300">
                 Successful signals
               </div>
             </div>
@@ -95,12 +95,12 @@ export function ObjectiveDisplay({ gameState }: ObjectiveDisplayProps) {
             <div className="p-3 bg-gray-800/50 rounded-lg">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-base">🧭</span>
-                <span className="text-xs text-gray-400">Navigation</span>
+                <span className="text-xs text-gray-300">Navigation</span>
               </div>
               <div className="text-lg font-bold text-blue-300">
                 {successfulNavigation}/{navigationAttempts}
               </div>
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-gray-300">
                 Progress made
               </div>
             </div>

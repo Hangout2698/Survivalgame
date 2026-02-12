@@ -12,6 +12,7 @@ export interface Equipment {
   name: string;
   quantity: number;
   condition: 'good' | 'worn' | 'damaged';
+  volumeLiters: number; // Volume in liters that this item takes up
 }
 
 export interface Scenario {
@@ -21,6 +22,8 @@ export interface Scenario {
   temperature: number;
   windSpeed: number;
   equipment: Equipment[];
+  backpackCapacityLiters: number; // Total volume capacity of the backpack
+  availableEquipment?: Equipment[]; // Items available but not yet packed (for loadout selection)
   initialCondition: string;
   distanceToSafety: string;
   terrainDifficulty: number;
@@ -193,6 +196,8 @@ export interface GameState {
   scenario: Scenario;
   metrics: PlayerMetrics;
   equipment: Equipment[];
+  backpackCapacityLiters: number; // Total capacity available
+  currentVolumeUsed: number; // Current volume occupied by equipment
   turnNumber: number;
   currentTimeOfDay: TimeOfDay;
   hoursElapsed: number;

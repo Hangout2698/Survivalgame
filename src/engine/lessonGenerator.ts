@@ -312,7 +312,7 @@ function getMetricsAtTurn(state: GameState, turnIndex: number): PlayerMetrics {
   }
 
   // Reconstruct metrics by applying all changes up to turnIndex
-  let metrics = { ...state.metrics };
+  const metrics = { ...state.metrics };
 
   for (let i = 0; i <= turnIndex && i < state.history.length; i++) {
     const outcome = state.history[i];

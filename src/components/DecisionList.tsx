@@ -59,7 +59,7 @@ export function DecisionList({ decisions, onSelect, disabled = false, gameState 
           className="w-full text-left p-4 bg-gray-800 hover:bg-gray-700 disabled:bg-gray-900 disabled:cursor-not-allowed border border-gray-700 hover:border-gray-600 disabled:border-gray-800 rounded transition-colors"
         >
           <div className="text-gray-100 leading-relaxed text-lg mb-2">{decision.text}</div>
-          <div className="flex gap-4 text-sm text-gray-500">
+          <div className="flex gap-4 text-sm text-gray-300">
             <span>Effort: {getEffortLabel(decision.energyCost)}</span>
             <span>Time: {decision.timeRequired}h</span>
           </div>

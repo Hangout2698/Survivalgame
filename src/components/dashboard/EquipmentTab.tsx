@@ -6,21 +6,24 @@ import { useInventory } from '../../contexts/InventoryContext';
 interface EquipmentTabProps {
   gameState: GameState;
   compact?: boolean;
+  onDropItem?: (itemName: string) => void; // Callback to drop an item during gameplay
 }
 
 interface ItemDisplayProps {
   itemId: string;
   remainingUses?: number;
   isConsumed: boolean;
+  volumeLiters?: number;
+  onDrop?: () => void; // Optional drop handler
 }
 
-const ItemDisplay: React.FC<ItemDisplayProps> = ({ itemId, remainingUses, isConsumed }) => {
+const ItemDisplay: React.FC<ItemDisplayProps> = ({ itemId, remainingUses, isConsumed, volumeLiters, onDrop }) => {
   const item = ITEM_DATABASE[itemId];
 
   if (!item) {
     return (
       <div className="p-3 bg-slate-900/30 rounded border border-slate-700/50">
-        <div className="text-xs text-slate-500">Unknown item: {itemId}</div>
+        <div className="text-xs text-slate-300">Unknown item: {itemId}</div>
       </div>
     );
   }
@@ -60,10 +63,10 @@ const ItemDisplay: React.FC<ItemDisplayProps> = ({ itemId, remainingUses, isCons
         <div className="flex items-center gap-2">
           <span className="text-2xl">{item.icon}</span>
           <div>
-            <div className={`text-sm font-semibold ${isConsumed ? 'text-slate-500' : 'text-slate-200'}`}>
+            <div className={`text-sm font-semibold ${isConsumed ? 'text-slate-300' : 'text-slate-200'}`}>
               {item.name}
             </div>
-            <div className="text-xs text-slate-400 capitalize">
+            <div className="text-xs text-slate-300 capitalize">
               {item.category}
             </div>
           </div>
@@ -76,15 +79,23 @@ const ItemDisplay: React.FC<ItemDisplayProps> = ({ itemId, remainingUses, isCons
       </div>
 
       {/* Description */}
-      <div className="text-xs text-slate-400 mb-2">
+      <div className="text-xs text-slate-300 mb-2">
         {item.description}
       </div>
+
+      {/* Volume Display */}
+      {volumeLiters !== undefined && (
+        <div className="text-xs text-slate-300 mb-2 flex items-center gap-1">
+          <span>📦</span>
+          <span>Volume: <span className="font-semibold text-slate-300">{volumeLiters}L</span></span>
+        </div>
+      )}
 
       {/* Uses Remaining (for consumables/containers) */}
       {item.initialUses !== undefined && (
         <div className="mb-2">
           <div className="flex items-center justify-between text-xs mb-1">
-            <span className="text-slate-400">Uses Remaining</span>
+            <span className="text-slate-300">Uses Remaining</span>
             <span className={`font-semibold ${
               (remainingUses ?? 0) === 0 ? 'text-red-400' : 'text-cyan-400'
             }`}>
@@ -105,7 +116,7 @@ const ItemDisplay: React.FC<ItemDisplayProps> = ({ itemId, remainingUses, isCons
       {/* Benefits */}
       {benefits.length > 0 && (
         <div className="space-y-1">
-          <div className="text-xs font-medium text-slate-400">Benefits:</div>
+          <div className="text-xs font-medium text-slate-300">Benefits:</div>
           <ul className="space-y-0.5">
             {benefits.map((benefit, idx) => (
               <li key={idx} className="text-xs text-slate-300 flex items-center gap-1">
@@ -119,21 +130,33 @@ const ItemDisplay: React.FC<ItemDisplayProps> = ({ itemId, remainingUses, isCons
 
       {/* Strategic Value */}
       <div className="mt-2 pt-2 border-t border-slate-700/30">
-        <div className="text-xs text-slate-500 italic">
+        <div className="text-xs text-slate-300 italic">
           {item.strategicValue}
         </div>
       </div>
+
+      {/* Drop Item Button (during gameplay) */}
+      {onDrop && !isConsumed && (
+        <div className="mt-3 pt-3 border-t border-slate-700/30">
+          <button
+            onClick={onDrop}
+            className="w-full px-3 py-2 text-xs font-medium bg-red-900/30 hover:bg-red-900/50 text-red-300 border border-red-700/50 rounded transition-all"
+          >
+            Drop Item (Free - Recovers {volumeLiters?.toFixed(1) || '?'}L)
+          </button>
+        </div>
+      )}
     </div>
   );
 };
 
 /**
  * Equipment Tab - Displays equipped items with detailed benefits
- * Shows effectiveness, uses remaining, and condition
+ * Shows effectiveness, uses remaining, condition, and volume
  */
-const EquipmentTab: React.FC<EquipmentTabProps> = ({ gameState, compact }) => {
+const EquipmentTab: React.FC<EquipmentTabProps> = ({ gameState, compact, onDropItem }) => {
   const inventory = useInventory();
-  const { equipment } = gameState;
+  const { equipment, backpackCapacityLiters, currentVolumeUsed } = gameState;
 
   // Convert Equipment names to item IDs (map equipment names to database keys)
   const equipmentIds = useMemo(() => {
@@ -165,25 +188,53 @@ const EquipmentTab: React.FC<EquipmentTabProps> = ({ gameState, compact }) => {
     return (
       <div className="p-8 text-center">
         <div className="text-4xl mb-3">🎒</div>
-        <div className="text-sm text-slate-400">No equipment selected</div>
-        <div className="text-xs text-slate-500 mt-1">
+        <div className="text-sm text-slate-300">No equipment selected</div>
+        <div className="text-xs text-slate-300 mt-1">
           You started this survival scenario without any equipment
         </div>
       </div>
     );
   }
 
+  const remainingCapacity = backpackCapacityLiters - currentVolumeUsed;
+  const capacityPercent = (currentVolumeUsed / backpackCapacityLiters) * 100;
+
   return (
     <div className={`p-4 space-y-4 ${compact ? 'text-sm' : ''}`}>
+      {/* Backpack Capacity Display */}
+      <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/50">
+        <div className="text-xs text-slate-300 mb-2">Backpack Capacity</div>
+        <div className="flex items-center gap-3 mb-2">
+          <div className="flex-1 h-2.5 bg-slate-800 rounded-full overflow-hidden">
+            <div
+              className={`h-full transition-all ${
+                capacityPercent >= 95
+                  ? 'bg-gradient-to-r from-red-500 to-red-600'
+                  : capacityPercent >= 75
+                  ? 'bg-gradient-to-r from-yellow-500 to-orange-500'
+                  : 'bg-gradient-to-r from-blue-500 to-purple-500'
+              }`}
+              style={{ width: `${Math.min(capacityPercent, 100)}%` }}
+            />
+          </div>
+          <div className="text-xs font-mono font-bold text-slate-200 whitespace-nowrap">
+            {currentVolumeUsed.toFixed(1)}L / {backpackCapacityLiters}L
+          </div>
+        </div>
+        <div className={`text-xs ${remainingCapacity > 0 ? 'text-green-400' : 'text-red-400'}`}>
+          {remainingCapacity > 0 ? `${remainingCapacity.toFixed(1)}L available` : 'Pack is full'}
+        </div>
+      </div>
+
       {/* Equipment Summary */}
       <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/50">
         <div className="flex justify-between items-center">
           <div>
-            <div className="text-xs text-slate-400">Total Items</div>
+            <div className="text-xs text-slate-300">Total Items</div>
             <div className="text-lg font-bold text-cyan-400">{stats.total}</div>
           </div>
           <div>
-            <div className="text-xs text-slate-400">Depleted</div>
+            <div className="text-xs text-slate-300">Depleted</div>
             <div className={`text-lg font-bold ${
               stats.depleted > 0 ? 'text-red-400' : 'text-green-400'
             }`}>
@@ -191,7 +242,7 @@ const EquipmentTab: React.FC<EquipmentTabProps> = ({ gameState, compact }) => {
             </div>
           </div>
           <div>
-            <div className="text-xs text-slate-400">Low Uses</div>
+            <div className="text-xs text-slate-300">Low Uses</div>
             <div className={`text-lg font-bold ${
               stats.lowUses > 0 ? 'text-yellow-400' : 'text-green-400'
             }`}>
@@ -229,17 +280,22 @@ const EquipmentTab: React.FC<EquipmentTabProps> = ({ gameState, compact }) => {
 
       {/* Equipment List */}
       <div className="space-y-3">
-        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+        <div className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
           Equipped Items
         </div>
-        {equipmentIds.map(itemId => (
-          <ItemDisplay
-            key={itemId}
-            itemId={itemId}
-            remainingUses={inventory.getRemainingUses(itemId)}
-            isConsumed={inventory.isItemConsumed(itemId)}
-          />
-        ))}
+        {equipment.map((eq, idx) => {
+          const itemId = equipmentIds[idx];
+          return itemId ? (
+            <ItemDisplay
+              key={`${itemId}-${idx}`}
+              itemId={itemId}
+              remainingUses={inventory.getRemainingUses(itemId)}
+              isConsumed={inventory.isItemConsumed(itemId)}
+              volumeLiters={eq.volumeLiters}
+              onDrop={onDropItem ? () => onDropItem(eq.name) : undefined}
+            />
+          ) : null;
+        })}
       </div>
     </div>
   );

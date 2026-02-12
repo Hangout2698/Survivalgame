@@ -88,57 +88,72 @@ export function EnhancedDecisionCard({ decision, gameState, onSelect, disabled =
               </div>
             )}
 
-            {/* Effort and Time Row - Simplified on mobile */}
-            <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3 flex-wrap">
-              <div className={`px-2 md:px-3 py-1 rounded-full border-2 ${effortStyle.badge} font-bold text-xs md:text-sm whitespace-nowrap`}>
-                {effortStyle.symbol} <span className="hidden md:inline">{effortStyle.label}</span>
+            {/* Effort and Time Row - White text with labels */}
+            <div className="flex items-center gap-3 md:gap-4 mb-2 md:mb-3 flex-wrap text-white">
+              <div className={`px-3 py-1.5 rounded-lg border-2 ${effortStyle.badge} font-bold text-xs md:text-sm whitespace-nowrap`}>
+                {effortStyle.symbol} {effortStyle.label} ({decision.timeRequired}h, {Math.abs(decision.energyCost > 0 ? 0 : decision.energyCost)} energy)
               </div>
-              <div className="text-xs md:text-sm text-gray-400 flex items-center gap-1">
+              <div className="text-xs md:text-sm flex items-center gap-1.5">
                 <span className="text-sm md:text-base">⏱️</span>
-                {decision.timeRequired}h
+                <span>Time:</span>
+                <span className="font-semibold">{decision.timeRequired}h</span>
               </div>
-              {/* Risk indicator - icon only on mobile, full text on desktop */}
-              <div className={`text-xs md:text-sm flex items-center gap-1 ${decision.riskLevel >= 7 ? 'text-red-400' : decision.riskLevel >= 5 ? 'text-yellow-400' : 'text-gray-400'}`}>
+              <div className={`text-xs md:text-sm flex items-center gap-1.5 ${decision.riskLevel >= 7 ? 'text-red-400' : decision.riskLevel >= 5 ? 'text-yellow-400' : ''}`}>
                 <AlertTriangle className="w-3 h-3 md:w-4 md:h-4" />
-                <span className="md:inline">{decision.riskLevel}</span>
-                <span className="hidden md:inline">/10</span>
+                <span>Risk:</span>
+                <span className="font-semibold">{decision.riskLevel}/10</span>
               </div>
             </div>
 
-            {/* Cost Summary - Compact on mobile */}
-            <div className="flex flex-wrap items-center gap-2 md:gap-4 text-sm md:text-base">
+            {/* Cost Summary - White text with labels */}
+            <div className="flex flex-wrap items-center gap-3 md:gap-4 text-sm md:text-base text-white">
               {/* Energy Cost */}
-              <div className={`flex items-center gap-1 md:gap-1.5 ${energyCritical ? 'text-red-400 font-bold' : 'text-gray-300'}`}>
+              <div className={`flex items-center gap-1.5 ${energyCritical ? 'text-red-400 font-bold' : ''}`}>
                 <span className="text-base md:text-lg">⚡</span>
-                <span className="text-xs md:text-base">{calc.energyCost > 0 ? '+' : ''}{calc.energyCost}</span>
+                <span className="text-xs md:text-sm">Energy:</span>
+                <span className="text-xs md:text-base font-semibold">{calc.energyCost > 0 ? '+' : ''}{calc.energyCost}</span>
                 {energyCritical && <AlertTriangle className="w-3 h-3 md:w-4 md:h-4" />}
               </div>
 
               {/* Hydration Cost */}
               {calc.hydrationCost !== 0 && (
-                <div className={`flex items-center gap-1 md:gap-1.5 ${hydrationCritical ? 'text-red-400 font-bold' : 'text-gray-300'}`}>
+                <div className={`flex items-center gap-1.5 ${hydrationCritical ? 'text-red-400 font-bold' : ''}`}>
                   <span className="text-base md:text-lg">💧</span>
-                  <span className="text-xs md:text-base">-{calc.hydrationCost}</span>
+                  <span className="text-xs md:text-sm">Hydration:</span>
+                  <span className="text-xs md:text-base font-semibold">-{calc.hydrationCost}</span>
                   {hydrationCritical && <AlertTriangle className="w-3 h-3 md:w-4 md:h-4" />}
                 </div>
               )}
 
-              {/* Temperature Change - Icon indicator visible on all screens */}
+              {/* Temperature Change */}
               {calc.temperatureChange !== 0 && (
-                <div className={`flex items-center gap-1 md:gap-1.5 ${tempCritical ? 'text-blue-400 font-bold' : 'text-gray-300'}`}>
+                <div className={`flex items-center gap-1.5 ${tempCritical ? 'text-blue-400 font-bold' : ''}`}>
                   <Thermometer className="w-3 h-3 md:w-4 md:h-4" />
-                  <span className="text-xs md:text-base">{calc.temperatureChange > 0 ? '+' : ''}{calc.temperatureChange.toFixed(1)}</span>
-                  <span className="hidden sm:inline text-xs md:text-base">°C</span>
+                  <span className="text-xs md:text-sm">Temp:</span>
+                  <span className="text-xs md:text-base font-semibold">{calc.temperatureChange > 0 ? '+' : ''}{calc.temperatureChange.toFixed(1)}°C</span>
                   {tempCritical && <AlertTriangle className="w-3 h-3 md:w-4 md:h-4" />}
                 </div>
               )}
 
               {/* Success Probability */}
-              <div className={`flex items-center gap-1 md:gap-1.5 ${successInfo.color} font-semibold`}>
+              <div className="flex items-center gap-1.5">
                 <span className="text-sm md:text-base">{successInfo.icon}</span>
-                <span className="text-xs md:text-base">{Math.round(calc.successProbability * 100)}%</span>
+                <span className="text-xs md:text-sm">Success:</span>
+                <span className={`text-xs md:text-base font-bold ${successInfo.color}`}>{Math.round(calc.successProbability * 100)}%</span>
               </div>
             </div>
+
+            {/* RISKY Warning Banner */}
+            {calc.successProbability < 0.5 && (
+              <div className="mt-3 px-3 py-2 bg-red-900/30 border-2 border-red-600 rounded-lg">
+                <div className="flex items-center gap-2 text-red-300">
+                  <AlertTriangle className="w-4 h-4 md:w-5 md:h-5 flex-shrink-0" />
+                  <span className="text-xs md:text-sm font-bold">
+                    ⚠️ RISKY: Success rate below 50%
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Equipment Requirements - Compact on mobile */}
             {equipmentReqs.length > 0 && (

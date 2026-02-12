@@ -4,6 +4,7 @@ import { getCategories, getPrinciplesByCategory } from '../engine/survivalPrinci
 import type { PrincipleCategory } from '../engine/survivalPrinciplesService';
 import { getFailureFact } from '../data/survivalFacts';
 import DecisionTimeline from './DecisionTimeline';
+import { LearningSummary } from './LearningSummary';
 
 interface GameOutcomeProps {
   state: GameState;
@@ -38,10 +39,10 @@ function calculateCategoryPerformance(state: GameState): Record<string, number> 
 function getLearningRecommendations(state: GameState): string[] {
   const categoryScores = calculateCategoryPerformance(state);
   const weakCategories = Object.entries(categoryScores)
-    .filter(([_, score]) => score < 50)
-    .sort(([_, a], [__, b]) => a - b)
+    .filter(([, score]) => score < 50)
+    .sort(([, a], [, b]) => a - b)
     .slice(0, 2)
-    .map(([cat, _]) => cat);
+    .map(([cat]) => cat);
 
   if (weakCategories.length === 0) {
     return ['You demonstrated strong survival knowledge across all categories!'];
@@ -388,7 +389,7 @@ export function GameOutcome({ state, onNewGame }: GameOutcomeProps) {
             <span className="text-xl font-semibold text-purple-200">{rating.rank}</span>
           </div>
         </div>
-        <p className="text-sm text-gray-300 leading-relaxed">{rating.description}</p>
+        <p className="text-sm text-gray-200 leading-relaxed">{rating.description}</p>
       </div>
 
       {/* Key Decision Points */}
@@ -409,7 +410,7 @@ export function GameOutcome({ state, onNewGame }: GameOutcomeProps) {
                 }`}
               >
                 <div className="flex items-start gap-3">
-                  <div className="text-xs text-gray-500 font-mono mt-0.5 flex-shrink-0">
+                  <div className="text-xs text-gray-400 font-mono mt-0.5 flex-shrink-0">
                     Turn {point.turn}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -637,6 +638,9 @@ export function GameOutcome({ state, onNewGame }: GameOutcomeProps) {
           ))}
         </div>
       </div>
+
+      {/* Learning Summary - Shows session progress and knowledge tracking */}
+      <LearningSummary />
 
       <button
         onClick={onNewGame}

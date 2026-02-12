@@ -33,8 +33,7 @@ export async function loadActiveSurvivalGuide(): Promise<SurvivalGuideContent | 
 
 export function extractRelevantGuidance(
   guideContent: SurvivalGuideContent | null,
-  state: GameState,
-  _context: 'decision' | 'outcome'
+  state: GameState
 ): string {
   if (!guideContent || !guideContent.rawText) {
     return '';
