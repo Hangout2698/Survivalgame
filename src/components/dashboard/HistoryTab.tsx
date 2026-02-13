@@ -214,4 +214,4 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ gameState, compact }) => {
   );
 };
 
-export default React.memo(HistoryTab);
+export default HistoryTab;

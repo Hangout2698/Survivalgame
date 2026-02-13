@@ -300,4 +300,4 @@ const EnvironmentTab: React.FC<EnvironmentTabProps> = ({ gameState, compact }) =
   );
 };
 
-export default React.memo(EnvironmentTab);
+export default EnvironmentTab;

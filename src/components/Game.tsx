@@ -316,8 +316,10 @@ export function Game() {
 
   // Show loadout screen first
   if (!loadoutComplete) {
+    console.log('Loadout not complete, scenario:', scenario);
     // Wait for scenario to be generated before showing loadout
     if (!scenario) {
+      console.log('Rendering scenario loading screen');
       return (
         <div className="min-h-screen bg-gray-950 text-gray-100 flex items-center justify-center">
           <div className="text-center">
@@ -327,6 +329,7 @@ export function Game() {
         </div>
       );
     }
+    console.log('Rendering LoadoutScreen with scenario:', scenario);
     return <LoadoutScreen scenario={scenario} onComplete={handleLoadoutComplete} />;
   }
 

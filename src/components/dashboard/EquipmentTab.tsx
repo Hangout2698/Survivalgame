@@ -301,4 +301,4 @@ const EquipmentTab: React.FC<EquipmentTabProps> = ({ gameState, compact, onDropI
   );
 };
 
-export default React.memo(EquipmentTab);
+export default EquipmentTab;
